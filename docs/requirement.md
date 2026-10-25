@@ -10,7 +10,7 @@ design topics to the design doc.
 |----------|--------|
 | Target | All mandatory requirements: Put/Get/Delete, per-key linearizability, restart recovery, latency goals at 1K ops/s |
 | Optional requirements (durability across server loss, availability on failure, partition handling) | Not in v1. Design must not preclude adding replication later |
-| Language | Python. Design phase must check that Python can hit the p99 targets at 1K ops/s with fsync'd writes |
+| Language | Python. Spike confirmed p99 targets at 1K ops/s with fsync'd writes ([spike/README.md](../spike/README.md)) |
 | Replication / consensus | None in v1. Raft or alternatives deferred |
 | Dataset size | Assumed to fit in RAM |
 | Time budget | One day |
@@ -42,7 +42,9 @@ CAS/conditional writes, transactions, replication (v1).
 |----------|-------------|----|
 | Consistency | Per-key linearizability: a completed Put/Delete is visible to every later Get; concurrent ops on a key serialize in some single order; no cross-key ordering | must |
 | Restart recovery | A process restart (clean or crash) must not lose acknowledged writes; data persisted to disk | must |
-| Durability on ack | Every Put/Delete is fsync'd to disk before the client receives success. No weaker mode | must |
+| Durability on ack | Every Put/Delete is committed to disk with a full fsync (`fullfsync=ON` on macOS) before the client receives success. No weaker mode | must |
+| Visibility | A Get never returns a value that is not yet durable (apply-after-commit) | must |
+| Failure policy | If a commit fails, the batch is rejected with an error, nothing is applied, and the server exits | must |
 | Performance | 1,000 ops/s sustained, 80% reads / 20% writes+deletes; p99 read < 50 ms, p99 write < 100 ms, healthy system | must |
 | Workload | key ~32 B avg (max 256 B), value ~1 KiB avg (max 64 KiB) | sizing input |
 | Capacity | Dataset fits in RAM (assumption); persistence still required | constraint |
@@ -72,23 +74,22 @@ Why it matters: F1 says "report success after the write satisfies the durability
 | group commit: batch writes, one fsync per batch | survives power loss | amortized; adds a few ms of queueing |
 | write without fsync | survives process crash only, not power loss | lowest |
 
-Decision: **always fsync before ack. No fallback to unsynced writes.** Start with fsync per write; switch to group commit if per-write fsync does not meet the write p99 in Python.
+Decision: **always fsync before ack. No fallback to unsynced writes.** Group commit via one SQLite transaction per batch, `synchronous=FULL`, `fullfsync=ON`, `checkpoint_fullfsync=ON`. Spike measured per-write fsync at put p99 56 ms and group commit at 11 ms, so group commit is the design.
 
 ### A3. Dataset size and key cardinality
 Resolved by assumption: fits in RAM. Estimate: 200 writes/s × 1 KiB is ~17 GB/day only if every write is a new key; the realistic key set (job status, config) is bounded. Assume ≤ 1M live keys.
 
 ### A4. Latency measurement point
 Why it matters: "service boundary" could mean the server handler or client-observed.
-Decision: headline number is client-observed from the workload generator on the same machine; also log server-side handler latency.
+Decision: latency is measured client-side by the workload generator on the same machine. No server-side latency logging in v1.
 
 ### A5. Workload generator
 
 | Choice | Options | Decision |
 |--------|---------|----------|
 | Load model | closed-loop (fixed concurrency) vs open-loop (fixed arrival rate) | open-loop at 1,000 ops/s |
-| Key distribution | uniform vs Zipfian | Zipfian over ~100K keys, uniform as an option |
+| Key distribution | uniform vs Zipfian | uniform over ~100K keys |
 | Operation mix | fixed 80/20 | 80% Get, 15% Put, 5% Delete |
-| Verification | none vs per-key last-write check | per-key checker: track acked writes, flag stale reads |
 | Reporting | mean vs histogram | p50/p95/p99/p999 via histogram, printed and saved |
 
 ### A6. Retries and idempotency
@@ -101,16 +102,20 @@ No CAS or versions. Last writer wins by the server's single per-key order.
 Why it matters: "recover after a process restart" needs a reproducible check.
 Decision: write a known set of keys, kill the server with SIGKILL mid-load, restart, verify every acked write is readable and every acked delete returns `NotFound`.
 
-## 4. Deferred design topics
+## 4. Design topics
 
-To be decided in the design doc; not requirements.
+Resolved in [design.md](design.md):
 
-- Wire protocol and request/response format (HTTP/JSON, gRPC, custom framing).
-- Client routing to the owning server (client-side hashing vs server forwarding).
-- Storage layout: in-memory dict + append-only log + snapshots vs embedded store (SQLite, LMDB).
-- Python runtime model: asyncio vs threads vs multiprocess; verify fsync'd writes meet p99 at 1K ops/s.
-- Log compaction / snapshot trigger.
-- Future: replication and consensus (Raft or alternative), read path for linearizable replicated reads, failure detection, replacing a lost server.
+| Topic | Decision |
+|-------|----------|
+| Wire protocol | HTTP/1.1 (aiohttp); key base64url in path, raw body value; 200/404/400/413/421/500 |
+| Client routing | client-side `md5(key) % N` over a static list; server answers 421 `WRONG_OWNER` |
+| Storage | SQLite WAL, `synchronous=FULL`, `fullfsync=ON`, `checkpoint_fullfsync=ON`; SQLite handles crash recovery and page reuse |
+| Runtime model | one asyncio process per server; SQLite on a single writer thread; batched transactions |
+| Visibility | in-memory dict loaded from committed state at startup, updated only after COMMIT |
+| Failure policy | commit failure: 500 for the batch, process exits |
+
+Deferred beyond v1: replication and consensus (Raft or alternative), linearizable replicated reads, failure detection, replacing a lost server, write-queue backpressure, health endpoint, consistency checker in the workload generator, graceful drain on SIGTERM.
 
 ## 5. Assumptions, no answer needed
 
