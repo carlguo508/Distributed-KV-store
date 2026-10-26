@@ -13,13 +13,31 @@ import sys
 import time
 from dataclasses import dataclass, field
 
-from .client import KVClient
+import aiohttp
+
+from .client import KVClient, WrongOwner
 from .config import ClusterConfig, load_config
 
 # requirement §2 Performance: p99 read < 50 ms, p99 write < 100 ms on a healthy system.
 READ_P99_MS = 50.0
 WRITE_P99_MS = 100.0
 OPS = ("get", "put", "delete")
+ERROR_KINDS = ("wrong_owner", "timeout", "connection", "other")
+WRONG_OWNER_HINT = ("hint: got 421 WRONG_OWNER: the cluster file passed to kvbench does not match "
+                    "the running servers (different server list, order or count)")
+
+
+def classify_error(exc: BaseException) -> str:
+    """Bucket a failed request so the report says why a run failed."""
+    if isinstance(exc, WrongOwner):
+        return "wrong_owner"
+    # Timeout before connection: aiohttp.ServerTimeoutError subclasses both TimeoutError
+    # and ClientConnectionError, and a timeout is the more useful label.
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return "timeout"
+    if isinstance(exc, aiohttp.ClientConnectionError):
+        return "connection"
+    return "other"
 
 
 def pick_op(r: float) -> str:
@@ -49,6 +67,8 @@ class Report:
     latencies: dict[str, list[float]]
     seconds: float
     errors: int
+    # Breakdown of `errors` by classify_error kind; only kinds that occurred are present.
+    error_counts: dict[str, int] = field(default_factory=dict)
     rows: list[dict] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -87,6 +107,11 @@ class Report:
             lines.append(f"{r['op']:7s}{r['count']:8d}{r['ops_per_sec']:9.0f}{f(r['p50_ms'])}{f(r['p95_ms'])}"
                          f"{f(r['p99_ms'])}{f(r['p999_ms'])}{f(r['max_ms'])}")
         lines.append(f"total {total} ops in {self.seconds:.0f}s = {total / self.seconds:.0f} ops/s, errors={self.errors}")
+        if self.error_counts:
+            lines.append("errors by type: " + ", ".join(
+                f"{k}={self.error_counts[k]}" for k in ERROR_KINDS if k in self.error_counts))
+        if self.error_counts.get("wrong_owner"):
+            lines.append(WRONG_OWNER_HINT)
         lines.append(f"targets: read p99 < {READ_P99_MS:.0f} ms, write p99 < {WRITE_P99_MS:.0f} ms -> "
                      + ("PASS" if self.passed() else "FAIL"))
         return "\n".join(lines)
@@ -101,6 +126,7 @@ async def run(cfg: ClusterConfig, rate: int, seconds: float, n_keys: int = 100_0
     value = os.urandom(value_size)
     latencies: dict[str, list[float]] = {op: [] for op in OPS}
     errors = 0
+    error_counts: dict[str, int] = {}
     q: asyncio.Queue = asyncio.Queue()
 
     async def worker(kv: KVClient) -> None:
@@ -109,7 +135,7 @@ async def run(cfg: ClusterConfig, rate: int, seconds: float, n_keys: int = 100_0
             item = await q.get()
             if item is None:
                 return
-            op, enqueued = item
+            op, scheduled_at = item
             key = keys[rng.randrange(n_keys)]
             try:
                 if op == "get":
@@ -118,12 +144,14 @@ async def run(cfg: ClusterConfig, rate: int, seconds: float, n_keys: int = 100_0
                     await kv.put(key, value)
                 else:
                     await kv.delete(key)
-                # Latency is measured from when the request was SCHEDULED, not when a worker
-                # picked it up. If the system falls behind, the wait in the queue counts,
-                # which avoids "coordinated omission" hiding slow periods.
-                latencies[op].append((time.perf_counter() - enqueued) * 1000.0)
-            except Exception:  # noqa: BLE001 - counted, run continues
+                # Latency is measured from the request's SCHEDULED time, not from when it was
+                # enqueued or picked up. If the generator or the system falls behind, that
+                # delay counts, which avoids "coordinated omission" hiding slow periods.
+                latencies[op].append((time.perf_counter() - scheduled_at) * 1000.0)
+            except Exception as exc:  # noqa: BLE001 - counted, run continues
                 errors += 1
+                kind = classify_error(exc)
+                error_counts[kind] = error_counts.get(kind, 0) + 1
 
     async with KVClient(cfg, conns_per_server=conns_per_server) as kv:
         # One worker per pooled connection, so each worker holds at most one in-flight request.
@@ -135,8 +163,11 @@ async def run(cfg: ClusterConfig, rate: int, seconds: float, n_keys: int = 100_0
         # earlier ones finished, like independent real clients. A closed loop would slow down
         # when the server does and under-report tail latency. Sleeping until an absolute
         # deadline (next_at) instead of a fixed interval keeps the rate from drifting.
+        # Each request is stamped with next_at, its slot in the schedule. If the event loop
+        # stalls (GC pause, a slow callback), the requests whose slots passed are enqueued late
+        # in a burst, and their latency still starts at the slot, not at the late enqueue.
         while next_at < end:
-            q.put_nowait((pick_op(rng.random()), time.perf_counter()))
+            q.put_nowait((pick_op(rng.random()), next_at))
             next_at += interval
             delay = next_at - time.perf_counter()
             if delay > 0:
@@ -145,7 +176,7 @@ async def run(cfg: ClusterConfig, rate: int, seconds: float, n_keys: int = 100_0
             q.put_nowait(None)
         await asyncio.gather(*workers)
         elapsed = time.perf_counter() - start
-    return Report(latencies=latencies, seconds=elapsed, errors=errors)
+    return Report(latencies=latencies, seconds=elapsed, errors=errors, error_counts=error_counts)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -1,7 +1,13 @@
+import asyncio
+import time
+
+import aiohttp
 import pytest
 from aiohttp.test_utils import TestServer
 
-from kvstore.bench import READ_P99_MS, WRITE_P99_MS, Report, percentile, pick_op, run
+from kvstore import bench
+from kvstore.bench import READ_P99_MS, WRITE_P99_MS, Report, classify_error, percentile, pick_op, run
+from kvstore.client import ServerError, WrongOwner
 from kvstore.config import ClusterConfig, ServerConfig
 from kvstore.server import create_app
 from kvstore.storage import Storage
@@ -82,3 +88,84 @@ async def test_run_against_live_server_counts_ops(storage):
     assert 150 <= total <= 220
     assert rep.errors == 0
     assert len(rep.latencies["get"]) > len(rep.latencies["put"]) > len(rep.latencies["delete"]) >= 0
+
+
+class StallingClient:
+    """Fake KVClient: the first request blocks the whole event loop for 200 ms
+    (time.sleep, not asyncio.sleep), as a GC pause or a slow generator would."""
+
+    def __init__(self, cfg, conns_per_server=32):
+        self.calls = 0
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        pass
+
+    async def _op(self, *args):
+        self.calls += 1
+        if self.calls == 1:
+            time.sleep(0.2)
+
+    get = put = delete = _op
+
+
+# Checks: latency is measured from each request's SCHEDULED time, so time a request spends
+#   waiting because the generator itself fell behind is counted (no coordinated omission,
+#   requirement A5 open loop).
+# Setup: a fake client whose first request freezes the event loop for 200 ms; 100 ops/s for 0.5 s.
+# Action: run the generator.
+# Expected: the ~19 requests scheduled during the freeze are issued late, and each records at
+#   least 100 ms of latency; at least 10 such samples overall.
+async def test_latency_counts_from_scheduled_time(monkeypatch):
+    monkeypatch.setattr(bench, "KVClient", StallingClient)
+    cfg = ClusterConfig(servers=(ServerConfig(0, "h", 1, "d"),))
+    rep = await run(cfg, rate=100, seconds=0.5, n_keys=10, value_size=8, conns_per_server=4, seed=1)
+    all_ms = [ms for v in rep.latencies.values() for ms in v]
+    assert sum(1 for ms in all_ms if ms >= 100.0) >= 10
+
+
+# Checks: errors are classified by type so a failed run says why (421, timeout, connection, other).
+# Setup: one exception of each kind the client can raise.
+# Action: classify each.
+# Expected: WrongOwner -> wrong_owner; timeouts (including aiohttp's ServerTimeoutError, which is
+#   also a connection error) -> timeout; other connection errors -> connection; the rest -> other.
+def test_classify_error():
+    assert classify_error(WrongOwner(421, "WRONG_OWNER 1")) == "wrong_owner"
+    assert classify_error(asyncio.TimeoutError()) == "timeout"
+    assert classify_error(aiohttp.ServerTimeoutError()) == "timeout"
+    assert classify_error(aiohttp.ClientConnectionError()) == "connection"
+    assert classify_error(ServerError(500, "commit failed")) == "other"
+    assert classify_error(ValueError("x")) == "other"
+
+
+# Checks: the text report shows the error breakdown, and a hint when any 421 was seen.
+# Setup: a report with 3 wrong-owner errors and 1 timeout; and one with only a timeout.
+# Action: render each as text.
+# Expected: the first lists both counts and the cluster-file hint; the second has no hint.
+def test_report_text_shows_error_breakdown_and_421_hint():
+    rep = Report(latencies={"get": [1.0]}, seconds=1, errors=4,
+                 error_counts={"wrong_owner": 3, "timeout": 1})
+    text = rep.to_text()
+    assert "wrong_owner=3" in text and "timeout=1" in text
+    assert "cluster file" in text
+    no_421 = Report(latencies={"get": [1.0]}, seconds=1, errors=1, error_counts={"timeout": 1})
+    assert "cluster file" not in no_421.to_text()
+
+
+# Checks: a client whose cluster file disagrees with the server gets 421s, counted as wrong_owner.
+# Setup: a test server that is server 0 of 2; a client config listing 2 servers, both at it.
+# Action: run the generator for 1 s at 100 ops/s.
+# Expected: some wrong_owner errors, error total equals the sum of the breakdown, run fails.
+async def test_run_counts_wrong_owner_errors(storage):
+    srv = TestServer(create_app(storage, server_id=0, n_servers=2))
+    await srv.start_server()
+    try:
+        cfg = ClusterConfig(servers=tuple(ServerConfig(i, srv.host, srv.port, "d") for i in range(2)))
+        rep = await run(cfg, rate=100, seconds=1, n_keys=100, value_size=8, conns_per_server=2, seed=1)
+    finally:
+        await srv.close()
+    assert rep.error_counts.get("wrong_owner", 0) > 0
+    assert rep.errors == sum(rep.error_counts.values())
+    assert not rep.passed()
