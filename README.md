@@ -96,12 +96,13 @@ measurements behind the Results table below; overwriting them changes the record
 
 Machine: MacBook Pro (Mac14,9), Apple M2 Pro, 16 GB RAM, macOS 26.5.1, Python 3.14.6.
 Date: 2026-10-25. 60 s at 1,000 ops/s, fresh data directory for each run. Generator and
-servers on the same machine. All latencies in ms.
+servers on the same machine. Latency is measured from each request's scheduled time. All
+latencies in ms.
 
 | Servers | Get p99 | Put p99 | Delete p99 | Get p99.9 | Put p99.9 | Errors | Result |
 |---------|---------|---------|------------|-----------|-----------|--------|--------|
-| 1 | 1.14 | 19.69 | 20.92 | 13.62 | 38.17 | 0 | PASS |
-| 3 | 0.92 | 22.15 | 18.72 | 4.16 | 38.49 | 0 | PASS |
+| 1 | 1.63 | 24.14 | 20.63 | 19.01 | 57.94 | 0 | PASS |
+| 3 | 1.22 | 21.68 | 17.71 | 4.58 | 47.68 | 0 | PASS |
 
 Raw CSVs: [results/n1.csv](results/n1.csv), [results/n3.csv](results/n3.csv).
 

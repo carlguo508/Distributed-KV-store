@@ -6,3 +6,4 @@ data/
 *.pid
 *.log
 .pytest_cache/
+results/exp-*.csv
