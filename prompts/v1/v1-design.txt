@@ -1,0 +1,3068 @@
+  ⎿  SessionStart:startup says: [Distributed_kv_store] recent context, 
+     2026-10-25 1:37pm PDT
+     ────────────────────────────────────────────────────────────
+
+     Legend: session-request | 🔴 bugfix | 🟣 feature | 🔄 refactor | ✅ change 
+     | 🔵 discovery | ⚖️ decision
+
+     Column Key
+       Read: Tokens to read this observation (cost to learn it now)
+       Work: Tokens spent on work that produced this record ( research, 
+     building, deciding)
+
+     Context Index: This semantic index (titles, types, files, tokens) is 
+     usually sufficient to understand past work.
+
+     When you need implementation details, rationale, or debugging context:
+       - Fetch by ID: get_observations([IDs]) for observations visible in this 
+     index
+       - Search history: Use the mem-search skill for past decisions, bugs, and 
+     deeper research
+       - Trust this index over re-reading code for past decisions and learnings
+
+     Context Economics
+       Loading: 1 observations (368 tokens to read)
+       Work investment: 7,526 tokens spent on research, building, and decisions
+       Your savings: 95% reduction from reuse
+
+     Oct 25, 2026
+
+     General
+       #2192  1:33 PM  ⚖️  Take-Home Project Strategy: Demonstrating AI-Driven
+     Software Development
+
+
+     Access 8k tokens of past research & decisions for just 368t. Use the 
+     claude-mem skill to access memories by ID.
+
+     View Observations Live @ http://localhost:37777
+
+❯ /rename
+  ⎿  Could not generate a name: no conversation context yet. Usage: /rename <name>
+
+❯ /rename kv-design
+  ⎿  Session renamed to: kv-design
+
+❯ <ide_opened_file>The user opened the file
+  /Users/Carl_Guo/Desktop/Distributed_kv_store/takehome_assignment_prompt.md in
+  the IDE. This may or may not be related to the current
+  task.</ide_opened_file>
+
+❯ <browser_instruction># Claude in Chrome browser automation
+
+  You have access to browser automation tools (mcp__claude-in-chrome__*) for
+  interacting with web pages in Chrome. Follow these guidelines for effective
+  browser automation.
+
+  ## Loading deferred tools
+
+  If the mcp__claude-in-chrome__* tools are deferred (must be loaded via
+  ToolSearch before use), load every tool you expect to need in ONE ToolSearch
+  call — the select query accepts a comma-separated list — never one call per
+  tool. Start with the core set:
+
+  ToolSearch with query
+  "select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__naviga
+  te,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__read_page,mcp__clau
+  de-in-chrome__tabs_create_mcp,mcp__claude-in-chrome__tabs_close_mcp"
+
+  Add task-specific tools to the same call when the task obviously needs them:
+  read_console_messages / read_network_requests for debugging, form_input for
+  forms, gif_creator for recordings, javascript_tool for page scripting.
+
+  ## GIF recording
+
+  When performing multi-step browser interactions that the user may want to
+  review or share, use mcp__claude-in-chrome__gif_creator to record them.
+
+  You must ALWAYS:
+  * Capture extra frames before and after taking actions to ensure smooth
+  playback
+  * Name the file meaningfully to help the user identify it later (e.g.,
+  "login_process.gif")
+
+  ## Console log debugging
+
+  You can use mcp__claude-in-chrome__read_console_messages to read console
+  output. Console output may be verbose. If you are looking for specific log
+  entries, use the 'pattern' parameter with a regex-compatible pattern. This
+  filters results efficiently and avoids overwhelming output. For example, use
+  pattern: "[MyApp]" to filter for application-specific logs rather than
+  reading all console output.
+
+  ## Alerts and dialogs
+
+  IMPORTANT: Do not trigger JavaScript alerts, confirms, prompts, or browser
+  modal dialogs through your actions. These browser dialogs block all further
+  browser events and will prevent the extension from receiving any subsequent
+  commands. Instead, when possible, use console.log for debugging and then use
+  the mcp__claude-in-chrome__read_console_messages tool to read those log
+  messages. If a page has dialog-triggering elements:
+  1. Avoid clicking buttons or links that may trigger alerts (e.g., "Delete"
+  buttons with confirmation dialogs)
+  2. If you must interact with such elements, warn the user first that this may
+  interrupt the session
+  3. Use mcp__claude-in-chrome__javascript_tool to check for and dismiss any
+  existing dialogs before proceeding
+
+  If you accidentally trigger a dialog and lose responsiveness, inform the user
+  they need to manually dismiss it in the browser.
+
+  ## Avoid rabbit holes and loops
+
+  When using browser automation tools, stay focused on the specific task. If
+  you encounter any of the following, stop and ask the user for guidance:
+  - Unexpected complexity or tangential browser exploration
+  - Browser tool calls failing or returning errors after 2-3 attempts
+  - No response from the browser extension
+  - Page elements not responding to clicks or input
+  - Pages not loading or timing out
+  - Unable to complete the browser task despite multiple approaches
+
+  Explain what you attempted, what went wrong, and ask how the user would like
+  to proceed. Do not keep retrying the same failing browser action or explore
+  unrelated pages without checking in first.
+
+  ## Tab context and session startup
+
+  IMPORTANT: At the start of each browser automation session, call
+  mcp__claude-in-chrome__tabs_context_mcp first to get information about the
+  user's current browser tabs. Use this context to understand what the user
+  might want to work with before creating new tabs.
+
+  Never reuse tab IDs from a previous/other session. Follow these guidelines:
+  1. Only reuse an existing tab if the user explicitly asks to work with it
+  2. Otherwise, create a new tab with mcp__claude-in-chrome__tabs_create_mcp
+  3. If a tool returns an error indicating the tab doesn't exist or is invalid,
+  call tabs_context_mcp to get fresh tab IDs
+  4. When a tab is closed by the user or a navigation error occurs, call
+  tabs_context_mcp to see what tabs are available</browser_instruction>
+
+❯ I am working on an assignment to implement a distributed kv store.  Read the
+  @takehome_assignment_prompt.md  carefully
+
+  Create a doc/requirements.md including
+  1. Functional Requirement of the system
+  2. Non-functional requirement, such as consistency, durability, recovery,
+  performance
+  3. The ambiguities and unspecified items. For each item, list why it matters
+  and what are the options, what is your perferred choice
+  4. Questions I need to answer, for now only the ones related to the design,
+  for other that are not that important, give your assumptions
+
+  Be concise, use tables for the tradeoff comparison
+  ⎿  Read takehome_assignment_prompt.md (77 lines)
+
+⏺ I'll read the prompt (done above), then draft the plan for
+  doc/requirements.md. The repo contains only the prompt file, so there is no
+  code to explore. I'll write the plan with the full draft content of the
+  document.
+
+⏺ Updated plan
+  ⎿  /plan to preview
+
+⏺ The plan is written. It contains the full draft of the requirements document,
+  so execution is a single step: create doc/requirements.md from it.
+
+⏺ User approved Claude's plan
+  ⎿  Plan saved to: ~/.claude/plans/i-am-working-on-valiant-bumblebee.md · /plan
+     to edit
+     Plan: create doc/requirements.md for the distributed KV store take-home
+
+     Context
+
+     The repo holds only takehome_assignment_prompt.md. Before designing or
+     coding, the user wants a
+     concise requirements document that (1) restates functional and
+     non-functional requirements,
+     (2) surfaces ambiguities with option tables and a preferred choice, and (3)
+     separates the design
+     questions the user must answer from minor items where an assumption
+     suffices. The doc is the
+     input to the later design doc and to the coding-agent prompts (which are a
+     graded deliverable).
+
+     Deliverable
+
+     One new file: doc/requirements.md (create the doc/ directory). No other
+     files change.
+     Target length: ~250–350 lines, tables for every trade-off. Draft content
+     below.
+
+     ---
+
+     Draft content of doc/requirements.md
+
+     1. Functional requirements
+
+     ┌─────┬───────────────────────────────────────────────────┬───────────────┐
+     │ ID  │                    Requirement                    │    Source     │
+     ├─────┼───────────────────────────────────────────────────┼───────────────┤
+     │ F1  │ Put(key, value): create or fully replace; ack     │ prompt        │
+     │     │ only after durability requirement met             │               │
+     ├─────┼───────────────────────────────────────────────────┼───────────────┤
+     │ F2  │ Get(key): return value, or explicit NotFound      │ prompt        │
+     ├─────┼───────────────────────────────────────────────────┼───────────────┤
+     │ F3  │ Delete(key): remove; deleting absent key succeeds │ prompt        │
+     ├─────┼───────────────────────────────────────────────────┼───────────────┤
+     │ F4  │ Keys/values are opaque bytes; empty value is      │ prompt        │
+     │     │ valid and distinct from missing                   │               │
+     ├─────┼───────────────────────────────────────────────────┼───────────────┤
+     │ F5  │ Limits: key ≤ 256 B, value ≤ 64 KiB; oversize     │ prompt        │
+     │     │ requests rejected with explicit error             │ (derived)     │
+     ├─────┼───────────────────────────────────────────────────┼───────────────┤
+     │ F6  │ Each op touches exactly one key; no multi-key or  │ prompt        │
+     │     │ transactional ops                                 │               │
+     ├─────┼───────────────────────────────────────────────────┼───────────────┤
+     │ F7  │ Multiple clients may hit the same key             │ prompt        │
+     │     │ concurrently                                      │               │
+     ├─────┼───────────────────────────────────────────────────┼───────────────┤
+     │ F8  │ Request/response format is ours to define         │ prompt        │
+     ├─────┼───────────────────────────────────────────────────┼───────────────┤
+     │ F9  │ Static cluster of 1–4 storage servers, each a     │ prompt        │
+     │     │ separate process, deployable on one machine       │               │
+     ├─────┼───────────────────────────────────────────────────┼───────────────┤
+     │ F10 │ Start/stop scripts; workload generator            │ deliverables  │
+     │     │ demonstrating 1K ops/s and latency goals          │               │
+     └─────┴───────────────────────────────────────────────────┴───────────────┘
+
+     Out of scope (explicit): auth, multi-region, dynamic membership,
+     range/scan, TTL, CAS/conditional writes.
+
+     2. Non-functional requirements
+
+     Category: Consistency
+     Requirement: Per-key linearizability: a completed Put/Delete is visible to
+     every later Get; concurrent ops on a key serialize in some single order; no
+
+     cross-key ordering
+     Tier: must
+     ────────────────────────────────────────
+     Category: Restart recovery
+     Requirement: Process restart must not lose acknowledged writes; data
+     persisted
+     to disk (WAL and/or snapshot)
+     Tier: must
+     ────────────────────────────────────────
+     Category: Durability
+     Requirement: Acked writes survive permanent loss of any one server
+     including
+     its disk → data on ≥2 servers before ack
+     Tier: nice-to-have (target)
+     ────────────────────────────────────────
+     Category: Availability
+     Requirement: One server failure causes only a brief interruption;
+     unaffected
+     data stays accessible; affected data served by survivors
+     Tier: nice-to-have (target)
+     ────────────────────────────────────────
+     Category: Partition behavior
+     Requirement: Never return stale data as success; return Unavailable/timeout
+
+     instead (CP, not AP)
+     Tier: nice-to-have (target)
+     ────────────────────────────────────────
+     Category: Performance
+     Requirement: 1,000 ops/s sustained, 80% reads / 20% writes+deletes; p99
+     read <
+     50 ms, p99 write < 100 ms, measured at the service boundary on a healthy
+     system
+     Tier: must
+     ────────────────────────────────────────
+     Category: Workload
+     Requirement: key ~32 B avg, value ~1 KiB avg
+     Tier: sizing input
+     ────────────────────────────────────────
+     Category: Deployment
+     Requirement: single region, single machine for demo, 1–4 processes, static
+     config
+     Tier: constraint
+     ────────────────────────────────────────
+     Category: Operability
+     Requirement: scripts to start/stop; observable enough to demonstrate
+     failover
+     (logs/metrics)
+     Tier: derived
+
+     3. Ambiguities and unspecified items
+
+     Each item: why it matters → options table → preferred choice.
+
+     A1. Replication / consensus mechanism — determines consistency, durability,
+     failover; the core design decision.
+
+     Option: Raft (one group over all nodes)
+     Consistency: linearizable
+     Durability on 1 loss: yes if N≥2
+     Failover: automatic election
+     Complexity: medium
+     ────────────────────────────────────────
+     Option: Primary-backup, sync replication + external coordinator
+     Consistency: linearizable
+     Durability on 1 loss: yes
+     Failover: needs coordinator/failure detector
+     Complexity: medium-high (coordinator is a SPOF unless itself replicated)
+     ────────────────────────────────────────
+     Option: Quorum R/W (Dynamo-style)
+     Consistency: needs extra machinery (per-key versions, read-repair) for
+     linearizability
+     Durability on 1 loss: yes
+     Failover: none needed
+     Complexity: high to make linearizable
+     ────────────────────────────────────────
+     Option: Single node + fsync
+     Consistency: linearizable
+     Durability on 1 loss: no
+     Failover: none
+     Complexity: low
+     ────────────────────────────────────────
+     Option: Preferred: Raft. It satisfies all three optional requirements with
+     one
+     mechanism and its partition behavior (minority can't serve) matches the "no
+
+     stale reads" rule directly.
+     Consistency:
+     Durability on 1 loss:
+     Failover:
+     Complexity:
+
+     A2. Data placement: single group vs sharding — affects "unaffected data
+     remains accessible" and perf.
+
+     Option: One Raft group, all keys, all N nodes
+     Pros: simplest; 1K ops/s is far below a single group's capacity
+     Cons: a leader failover pauses all keys briefly (acceptable per prompt)
+     ────────────────────────────────────────
+     Option: Hash-sharded multi-Raft (e.g. 8–16 groups spread across nodes)
+     Pros: failover of one group affects a subset of keys
+     Cons: more code, more config, little benefit at this scale
+     ────────────────────────────────────────
+     Option: Consistent hashing with per-key primary
+     Pros: fine-grained
+     Cons: needs separate replication + failover logic
+     ────────────────────────────────────────
+     Option: Preferred: single Raft group; keep the key→shard hash in the API
+     layer
+     so sharding is a later extension.
+     Pros:
+     Cons:
+
+     A3. Cluster size semantics (N = 1..4) — quorum math changes what
+     "durability" and "availability" mean.
+
+     N: 1
+     Quorum: 1
+     Tolerates for availability: 0
+     Durable on 1 disk loss: no (impossible)
+     ────────────────────────────────────────
+     N: 2
+     Quorum: 2
+     Tolerates for availability: 0 (writes block when one is down)
+     Durable on 1 disk loss: yes
+     ────────────────────────────────────────
+     N: 3
+     Quorum: 2
+     Tolerates for availability: 1
+     Durable on 1 disk loss: yes
+     ────────────────────────────────────────
+     N: 4
+     Quorum: 3
+     Tolerates for availability: 1
+     Durable on 1 disk loss: yes
+     ────────────────────────────────────────
+     N: Preferred: all N nodes are voters in one group; document the table
+     above;
+     N=1 and N=2 are supported but degraded, and the demo runs N=3.
+     Quorum:
+     Tolerates for availability:
+     Durable on 1 disk loss:
+
+     A4. Read path (linearizable reads) — biggest latency and correctness lever
+     for the 80% read workload.
+
+     Option: Leader-only, through the log
+     Linearizable: yes
+     Read latency: high (disk + replication per read)
+     Notes: wasteful
+     ────────────────────────────────────────
+     Option: Leader-only with ReadIndex (heartbeat round)
+     Linearizable: yes
+     Read latency: one RTT, no disk
+     Notes: standard
+     ────────────────────────────────────────
+     Option: Leader lease reads
+     Linearizable: yes (assuming bounded clock drift)
+     Read latency: local
+     Notes: risk under clock skew
+     ────────────────────────────────────────
+     Option: Follower reads
+     Linearizable: no (stale)
+     Read latency: local
+     Notes: violates requirement
+     ────────────────────────────────────────
+     Option: Preferred: ReadIndex on the leader; lease reads as a measured
+     optimization only if needed.
+     Linearizable:
+     Read latency:
+     Notes:
+
+     A5. Client routing — who finds the leader.
+
+     ┌────────────────────────────────────┬─────────────┬─────────────────────┐
+     │               Option               │   Client    │      Extra hop      │
+     │                                    │ complexity  │                     │
+     ├────────────────────────────────────┼─────────────┼─────────────────────┤
+     │ Any node accepts and forwards to   │ none        │ one intra-cluster   │
+     │ leader                             │             │ hop on non-leader   │
+     ├────────────────────────────────────┼─────────────┼─────────────────────┤
+     │ Redirect response with leader      │ small       │ one round trip on   │
+     │ hint; client retries               │             │ miss                │
+     ├────────────────────────────────────┼─────────────┼─────────────────────┤
+     │ Smart client caches leader         │ moderate    │ none steady-state   │
+     ├────────────────────────────────────┼─────────────┼─────────────────────┤
+     │ Preferred: any node forwards, plus │             │                     │
+     │  leader hint in responses so the   │             │                     │
+     │ workload generator can cache it.   │             │                     │
+     └────────────────────────────────────┴─────────────┴─────────────────────┘
+
+     A6. Wire protocol
+
+     ┌────────────────────────────────┬───────────────┬────────────────┬──────┐
+     │             Option             │ Binary-safe   │    Tooling     │ Perf │
+     │                                │     bytes     │                │      │
+     ├────────────────────────────────┼───────────────┼────────────────┼──────┤
+     │ gRPC/protobuf                  │ yes           │ codegen,       │ good │
+     │                                │               │ streaming      │      │
+     ├────────────────────────────────┼───────────────┼────────────────┼──────┤
+     │ HTTP/1.1 + JSON (base64        │ awkward       │ curl-friendly  │ ok   │
+     │ values)                        │               │                │      │
+     ├────────────────────────────────┼───────────────┼────────────────┼──────┤
+     │ Custom TCP framing             │ yes           │ hand-rolled    │ best │
+     ├────────────────────────────────┼───────────────┼────────────────┼──────┤
+     │ Preferred: gRPC for client API │               │                │      │
+     │  and for Raft RPC (one stack). │               │                │      │
+     └────────────────────────────────┴───────────────┴────────────────┴──────┘
+
+     A7. Storage engine
+
+     ┌───────────────────────────────────┬──────────┬────────────┬────────────┐
+     │              Option               │ Restart  │  Memory    │   Effort   │
+     │                                   │ recovery │   bound    │            │
+     ├───────────────────────────────────┼──────────┼────────────┼────────────┤
+     │ In-memory map + Raft log on disk  │          │ dataset    │            │
+     │ + periodic snapshots              │ yes      │ must fit   │ low–medium │
+     │                                   │          │ RAM        │            │
+     ├───────────────────────────────────┼──────────┼────────────┼────────────┤
+     │ Embedded KV                       │          │            │ low        │
+     │ (Pebble/RocksDB/bbolt/sled) as    │ yes      │ disk-bound │ (library)  │
+     │ state machine                     │          │            │            │
+     ├───────────────────────────────────┼──────────┼────────────┼────────────┤
+     │ Custom LSM/B-tree                 │ yes      │ disk-bound │ high       │
+     ├───────────────────────────────────┼──────────┼────────────┼────────────┤
+     │ Preferred: in-memory map +        │          │            │            │
+     │ WAL/snapshot if the dataset is    │          │            │            │
+     │ assumed to fit memory (see Q6);   │          │            │            │
+     │ otherwise embedded KV.            │          │            │            │
+     └───────────────────────────────────┴──────────┴────────────┴────────────┘
+
+     A8. fsync policy — defines what "durable" means on a single disk.
+
+     ┌─────────────────────────────────────────┬──────────────┬────────────────┐
+     │                 Option                  │    Safety    │ Write latency  │
+     ├─────────────────────────────────────────┼──────────────┼────────────────┤
+     │                                         │              │ ~ms per write, │
+     │ fsync per entry                         │ strongest    │  fine for 200  │
+     │                                         │              │ w/s            │
+     ├─────────────────────────────────────────┼──────────────┼────────────────┤
+     │ group commit (fsync per batch, few ms   │ strong       │ amortized      │
+     │ window)                                 │              │                │
+     ├─────────────────────────────────────────┼──────────────┼────────────────┤
+     │                                         │ loses tail   │                │
+     │ no fsync (OS cache)                     │ on power     │ lowest         │
+     │                                         │ loss         │                │
+     ├─────────────────────────────────────────┼──────────────┼────────────────┤
+     │ Preferred: fsync before vote/ack, with  │              │                │
+     │ group commit; power-loss durability per │              │                │
+     │  node is implied by "memory alone is    │              │                │
+     │ not sufficient".                        │              │                │
+     └─────────────────────────────────────────┴──────────────┴────────────────┘
+
+     A9. Failure detection and "brief interruption" — unspecified bound.
+     Preferred: Raft heartbeat 100 ms, election timeout 500–1000 ms; target full
+     failover < 2 s; demo measures it.
+
+     A10. Replacing a permanently lost server — static membership but a disk can
+     be lost.
+     Preferred: operator restarts a node with the same ID and an empty data dir;
+     it rejoins and catches up via snapshot + log. No membership-change RPC.
+
+     A11. Dataset size / key cardinality — not stated; drives A7.
+     Estimate: at 200 writes/s × 1 KiB, worst case ~17 GB/day of new keys;
+     realistic for "job status / config" is a bounded key set. Assume ≤ 1M live
+     keys (~1–2 GB) per node in RAM unless told otherwise.
+
+     A12. Latency measurement point — "service boundary" is ambiguous (server
+     handler vs client observed).
+     Preferred: report both; the headline number is client-observed from the
+     workload generator on the same machine, since that is what the grader can
+     reproduce.
+
+     A13. Workload generator design
+
+     ┌──────────────┬─────────────────────────┬───────────────────────────────┐
+     │    Choice    │         Options         │           Preferred           │
+     ├──────────────┼─────────────────────────┼───────────────────────────────┤
+     │              │ closed-loop (fixed      │                               │
+     │ Load model   │ concurrency) vs         │ open-loop at 1,000 ops/s;     │
+     │              │ open-loop (fixed        │ shows true tail latency       │
+     │              │ arrival rate)           │                               │
+     ├──────────────┼─────────────────────────┼───────────────────────────────┤
+     │ Key          │ uniform vs Zipfian      │ Zipfian over ~100K keys with  │
+     │ distribution │                         │ uniform option                │
+     ├──────────────┼─────────────────────────┼───────────────────────────────┤
+     │              │                         │ lightweight per-key           │
+     │ Verification │ none vs per-key         │ consistency checker (track    │
+     │              │ last-write check        │ acked writes, flag stale      │
+     │              │                         │ reads)                        │
+     ├──────────────┼─────────────────────────┼───────────────────────────────┤
+     │              │                         │ p50/p95/p99/p999 via          │
+     │ Reporting    │ mean vs HDR histogram   │ histogram, CSV/markdown       │
+     │              │                         │ output                        │
+     └──────────────┴─────────────────────────┴───────────────────────────────┘
+
+     A14. Retries and idempotency — a timed-out Put may have been applied.
+     Preferred: Put/Delete are naturally idempotent for the same value; no
+     request IDs. Client retries after timeout.
+
+     A15. Concurrency semantics — no CAS, no versions required. Last-writer-wins
+     by log order.
+
+     4. Open questions and assumptions
+
+     Design questions for the user (need answers before the design doc):
+
+     #: Q1
+     Question: Implementation language? (Go / Rust / Java / Python)
+     Why it matters: library ecosystem for Raft, gRPC; perf headroom
+     My default if unanswered: Go
+     ────────────────────────────────────────
+     #: Q2
+     Question: Implement Raft from scratch or use a library (e.g.
+     hashicorp/raft,
+     etcd/raft)?
+     Why it matters: scratch shows depth and is a bigger grading signal but
+     costs
+     time and risk
+     My default if unanswered: library for the core, own state machine, log
+     store,
+     snapshotting and client layer; justify in design doc
+     ────────────────────────────────────────
+     #: Q3
+     Question: Target the optional requirements (durability, availability,
+     partitions) as must-do?
+     Why it matters: decides Raft vs single node + WAL
+     My default if unanswered: yes, all three
+     ────────────────────────────────────────
+     #: Q4
+     Question: Single Raft group vs sharded multi-group?
+     Why it matters: scope and demo story for "unaffected data remains
+     accessible"
+     My default if unanswered: single group
+     ────────────────────────────────────────
+     #: Q5
+     Question: gRPC vs HTTP API for clients?
+     Why it matters: tooling vs curl-ability for the grader
+     My default if unanswered: gRPC, plus optional thin HTTP gateway only if
+     cheap
+     ────────────────────────────────────────
+     #: Q6
+     Question: Expected total dataset size: fits RAM or must be disk-indexed?
+     Why it matters: storage engine choice (A7)
+     My default if unanswered: fits RAM; map + WAL + snapshots
+     ────────────────────────────────────────
+     #: Q7
+     Question: Time budget for the take-home?
+     Why it matters: depth of Q2/Q4 choices
+     My default if unanswered: ~1–2 focused days
+     ────────────────────────────────────────
+     #: Q8
+     Question: Must the demo show failover and partition behavior, or only
+     steady-state load?
+     Why it matters: drives chaos scripts in the workload generator
+     My default if unanswered: show both: kill a node mid-load, show recovery
+
+     Minor items — assumptions taken, no answer needed:
+     - Static config file lists node IDs, addresses, ports; all nodes started on
+       localhost with distinct ports and data dirs.
+     - No TLS, no auth, no multi-tenancy.
+     - macOS and Linux supported; single-machine demo only.
+     - Snapshot trigger: every N log entries or size threshold; log truncated
+       after snapshot.
+     - Logging to stdout plus a simple /status or metrics endpoint per node for
+       the demo.
+     - Workload generator uses the same client library as production clients.
+     - Oversize key/value → InvalidArgument; empty key is rejected (not
+       specified; chosen for simplicity).
+     - Generator and servers run on one laptop, so absolute latencies are not
+       representative of a real network; p99 goals are still enforced as-is.
+
+     ---
+
+     Execution steps (after plan approval)
+
+     1. mkdir doc and write doc/requirements.md with the content above (tighten
+        wording, keep tables).
+     2. Re-read against the prompt to confirm every prompt sentence maps to an
+        F/NF row or an ambiguity.
+
+     Verification
+
+     - Every sentence in takehome_assignment_prompt.md is covered by a row in
+       §1/§2 or an item in §3.
+     - Each §3 item has: why it matters, an options table, a preferred choice.
+     - §4 separates user-answered design questions from assumptions; each
+       question lists a default.
+     - Markdown renders (tables aligned) when previewed in VS Code.
+
+⏺ Writing doc/requirements.md now.
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ <browser_instruction>[Browser disconnected: The browser connection has been
+  closed. Browser tools are no longer available.]</browser_instruction>
+
+❯ List the requirements.md again and do not write it yet, I need to do some
+  manual edit
+
+⏺ Nothing was written yet. Here is the full draft of doc/requirements.md for
+  your edits.
+
+  # Requirements: Distributed Key-Value Store
+
+  Source: `takehome_assignment_prompt.md`. This document restates the
+  requirements, lists
+  ambiguities with options and a preferred choice, and separates design
+  questions from assumptions.
+
+  ## 1. Functional requirements
+
+  | ID | Requirement | Source |
+  |----|-------------|--------|
+  | F1 | `Put(key, value)`: create or fully replace; ack only after the
+  durability requirement is met | prompt |
+  | F2 | `Get(key)`: return the value, or an explicit `NotFound` | prompt |
+  | F3 | `Delete(key)`: remove the key; deleting an absent key succeeds | prompt
+  |
+  | F4 | Keys and values are opaque bytes; an empty value is valid and distinct
+  from a missing key | prompt |
+  | F5 | Limits: key ≤ 256 B, value ≤ 64 KiB; oversize requests are rejected
+  with an explicit error | derived |
+  | F6 | Each operation touches exactly one key; no multi-key or transactional
+  operations | prompt |
+  | F7 | Multiple clients may operate on the same key concurrently | prompt |
+  | F8 | Request/response format is ours to define | prompt |
+  | F9 | Static cluster of 1–4 storage servers, each a separate process,
+  deployable on one machine | prompt |
+  | F10 | Start/stop scripts and a workload generator demonstrating 1K ops/s
+  within the latency goals | deliverables |
+
+  Out of scope (explicit or implied): authentication, multi-region, dynamic
+  membership,
+  range/scan, TTL, CAS/conditional writes, transactions.
+
+  ## 2. Non-functional requirements
+
+  | Category | Requirement | Tier |
+  |----------|-------------|------|
+  | Consistency | Per-key linearizability: a completed Put/Delete is visible to
+  every later Get; concurrent ops on a key serialize in some single order; no
+  cross-key ordering | must |
+  | Restart recovery | A process restart must not lose acknowledged writes; data
+  persisted to disk (WAL and/or snapshot) | must |
+  | Durability | Acked writes survive permanent loss of any one server including
+  its disk, so data is on ≥2 servers before ack | nice-to-have (target) |
+  | Availability | One server failure causes only a brief interruption;
+  unaffected data stays accessible; affected data is served by survivors |
+  nice-to-have (target) |
+  | Partition behavior | Never return stale data as a success; return
+  `Unavailable` or time out instead (CP, not AP) | nice-to-have (target) |
+  | Performance | 1,000 ops/s sustained, 80% reads / 20% writes+deletes; p99
+  read < 50 ms, p99 write < 100 ms at the service boundary on a healthy system |
+  must |
+  | Workload | key ~32 B avg (max 256 B), value ~1 KiB avg (max 64 KiB) | sizing
+  input |
+  | Deployment | single region, single machine for the demo, 1–4 processes,
+  static config | constraint |
+  | Operability | start/stop scripts; enough logging/metrics to demonstrate
+  failover | derived |
+
+  ## 3. Ambiguities and unspecified items
+
+  Each item: why it matters, the options, and the preferred choice.
+
+  ### A1. Replication / consensus mechanism
+  Why it matters: determines consistency, durability and failover; the core
+  design decision.
+
+  | Option | Consistency | Durable on 1 loss | Failover | Complexity |
+  |--------|-------------|-------------------|----------|------------|
+  | Raft, one group over all nodes | linearizable | yes if N ≥ 2 | automatic
+  election | medium |
+  | Primary-backup, sync replication + external coordinator | linearizable | yes
+  | needs coordinator / failure detector | medium-high; coordinator is a SPOF
+  unless replicated |
+  | Quorum R/W (Dynamo-style) | needs per-key versions + read-repair to be
+  linearizable | yes | none needed | high to make linearizable |
+  | Single node + fsync | linearizable | no | none | low |
+
+  Preferred: **Raft**. One mechanism satisfies all three optional requirements,
+  and minority
+  partitions naturally refuse to serve, which matches the "no stale reads" rule.
+
+  ### A2. Data placement: single group vs sharding
+  Why it matters: affects "unaffected data remains accessible" and code size.
+
+  | Option | Pros | Cons |
+  |--------|------|------|
+  | One Raft group, all keys, all N nodes | simplest; 1K ops/s is far below one
+  group's capacity | leader failover briefly pauses all keys (acceptable per
+  prompt) |
+  | Hash-sharded multi-Raft (8–16 groups across nodes) | failover of one group
+  affects a subset of keys | more code and config; little benefit at this scale
+  |
+  | Consistent hashing, per-key primary | fine-grained placement | needs
+  separate replication and failover logic |
+
+  Preferred: **single Raft group**; keep a key→shard hash in the API layer so
+  sharding is a later extension.
+
+  ### A3. Cluster size semantics (N = 1..4)
+  Why it matters: quorum math changes what durability and availability mean.
+
+  | N | Quorum | Failures tolerated for availability | Durable on 1 disk loss |
+  |---|--------|-------------------------------------|------------------------|
+  | 1 | 1 | 0 | no (impossible) |
+  | 2 | 2 | 0 (writes block when one node is down) | yes |
+  | 3 | 2 | 1 | yes |
+  | 4 | 3 | 1 | yes |
+
+  Preferred: all N nodes are voters in one group. N=1 and N=2 are supported but
+  degraded; the demo runs N=3.
+
+  ### A4. Read path (linearizable reads)
+  Why it matters: the biggest latency and correctness lever for the 80% read
+  workload.
+
+  | Option | Linearizable | Read latency | Notes |
+  |--------|--------------|--------------|-------|
+  | Leader-only, through the log | yes | high (disk + replication per read) |
+  wasteful |
+  | Leader-only with ReadIndex (heartbeat round) | yes | one RTT, no disk |
+  standard |
+  | Leader lease reads | yes, assuming bounded clock drift | local | risk under
+  clock skew |
+  | Follower reads | no (stale) | local | violates requirement |
+
+  Preferred: **ReadIndex on the leader**; lease reads only as a measured
+  optimization.
+
+  ### A5. Client routing
+  Why it matters: who finds the leader, and how much the client must know.
+
+  | Option | Client complexity | Extra hop |
+  |--------|-------------------|-----------|
+  | Any node accepts and forwards to the leader | none | one intra-cluster hop
+  on non-leader |
+  | Redirect response with leader hint; client retries | small | one round trip
+  on miss |
+  | Smart client caches leader | moderate | none in steady state |
+
+  Preferred: **any node forwards**, plus a leader hint in responses so the
+  client can cache it.
+
+  ### A6. Wire protocol
+
+  | Option | Binary-safe bytes | Tooling | Perf |
+  |--------|-------------------|---------|------|
+  | gRPC / protobuf | yes | codegen, streaming | good |
+  | HTTP/1.1 + JSON (base64 values) | awkward | curl-friendly | ok |
+  | Custom TCP framing | yes | hand-rolled | best |
+
+  Preferred: **gRPC** for both the client API and Raft RPC (one stack).
+
+  ### A7. Storage engine
+
+  | Option | Restart recovery | Memory bound | Effort |
+  |--------|------------------|--------------|--------|
+  | In-memory map + Raft log on disk + periodic snapshots | yes | dataset must
+  fit RAM | low–medium |
+  | Embedded KV (Pebble / RocksDB / bbolt / sled) as state machine | yes |
+  disk-bound | low (library) |
+  | Custom LSM / B-tree | yes | disk-bound | high |
+
+  Preferred: **in-memory map + WAL + snapshots** if the dataset fits memory (see
+  Q6); otherwise embedded KV.
+
+  ### A8. fsync policy
+  Why it matters: defines what "durable" means on a single disk.
+
+  | Option | Safety | Write latency |
+  |--------|--------|---------------|
+  | fsync per entry | strongest | ~ms per write; fine for 200 w/s |
+  | group commit (fsync per batch, few-ms window) | strong | amortized |
+  | no fsync (OS cache) | loses tail on power loss | lowest |
+
+  Preferred: **fsync before vote/ack, with group commit**. "Memory alone is not
+  sufficient" implies per-node power-loss durability.
+
+  ### A9. Failure detection and "brief interruption"
+  Why it matters: the prompt gives no bound.
+  Preferred: Raft heartbeat 100 ms, election timeout 500–1000 ms, target full
+  failover < 2 s; the demo measures it.
+
+  ### A10. Replacing a permanently lost server
+  Why it matters: membership is static but a disk can be lost.
+  Preferred: operator restarts the node with the same ID and an empty data dir;
+  it rejoins and catches up via snapshot + log. No membership-change RPC.
+
+  ### A11. Dataset size / key cardinality
+  Why it matters: drives the storage engine choice (A7).
+  Estimate: 200 writes/s × 1 KiB is ~17 GB/day if every write is a new key;
+  realistic for "job status / config" is a bounded key set. Assume ≤ 1M live
+  keys (~1–2 GB) fits in RAM per node.
+
+  ### A12. Latency measurement point
+  Why it matters: "service boundary" could mean the server handler or the
+  client-observed latency.
+  Preferred: report both; the headline number is client-observed from the
+  workload generator on the same machine, since that is what a grader can
+  reproduce.
+
+  ### A13. Workload generator design
+
+  | Choice | Options | Preferred |
+  |--------|---------|-----------|
+  | Load model | closed-loop (fixed concurrency) vs open-loop (fixed arrival
+  rate) | open-loop at 1,000 ops/s; shows true tail latency |
+  | Key distribution | uniform vs Zipfian | Zipfian over ~100K keys, uniform as
+  an option |
+  | Verification | none vs per-key last-write check | lightweight per-key
+  checker: track acked writes, flag stale reads |
+  | Reporting | mean vs histogram | p50/p95/p99/p999 via HDR histogram,
+  CSV/markdown output |
+
+  ### A14. Retries and idempotency
+  Why it matters: a timed-out Put may already have been applied.
+  Preferred: Put/Delete are idempotent for the same value; no request IDs; the
+  client retries after timeout.
+
+  ### A15. Concurrency semantics
+  No CAS or versions required. Last writer wins by log order.
+
+  ## 4. Open questions and assumptions
+
+  ### Design questions to answer before the design doc
+
+  | # | Question | Why it matters | Default if unanswered |
+  |---|----------|----------------|-----------------------|
+  | Q1 | Implementation language? (Go / Rust / Java / Python) | Raft and gRPC
+  library ecosystem; performance headroom | Go |
+  | Q2 | Raft from scratch or a library (hashicorp/raft, etcd/raft)? | scratch
+  shows depth but costs time and risk | library for the core; own state machine,
+  log store, snapshots, client layer |
+  | Q3 | Treat the optional requirements (durability, availability, partitions)
+  as must-do? | decides Raft vs single node + WAL | yes, all three |
+  | Q4 | Single Raft group or sharded multi-group? | scope, and the demo story
+  for "unaffected data remains accessible" | single group |
+  | Q5 | gRPC or HTTP for the client API? | tooling vs curl-ability for the
+  grader | gRPC; thin HTTP gateway only if cheap |
+  | Q6 | Expected dataset size: fits RAM or must be disk-indexed? | storage
+  engine (A7) | fits RAM; map + WAL + snapshots |
+  | Q7 | Time budget for the take-home? | depth of Q2 and Q4 | 1–2 focused days
+  |
+  | Q8 | Must the demo show failover and partitions, or only steady-state load?
+  | drives chaos scripts in the workload generator | both: kill a node mid-load,
+  show recovery |
+
+  ### Minor items: assumptions taken, no answer needed
+  - Static config file lists node IDs, addresses, ports; nodes run on localhost
+  with distinct ports and data dirs.
+  - No TLS, no auth, no multi-tenancy.
+  - macOS and Linux supported; single-machine demo only.
+  - Snapshot trigger: every N log entries or a size threshold; log truncated
+  after snapshot.
+  - Logging to stdout plus a simple status/metrics endpoint per node.
+  - The workload generator uses the same client library as production clients.
+  - Oversize key/value returns `InvalidArgument`; empty key is rejected.
+  - Generator and servers share one laptop, so absolute latencies are not
+  representative of a real network; the p99 goals are still enforced as written.
+
+  Nothing is on disk yet. Tell me when you're done editing and I'll write it to
+  doc/requirements.md, or paste your edited version and I'll save that.
+
+❯ For the questions:
+   Q1 Language: Python. In the design phase, check whether Python can hit
+    the p99 targets at 1K ops/s with fsync'd writes
+  Q2 no raft for version 1
+  Q3 Optional requirements: NOT in v1. I only want to achieve all the the
+  mandatory requirements
+    (Put/Get/Delete, per-key linearizability, restart recovery) in v1, meeting
+  the latency targets at 1K ops/s.
+  Q4: Leave the replication and raft design and implementation to the future,
+  for this specific design choice, leave it to the design phrase later
+  Q5: Defer this to the design phrase
+  Q6: Suppose the data can fit in RAM
+  Q7: one day
+  Q8: dont do failover demo, show the steady state load at 1k ops/s with the
+  p99 report and restart test
+
+  Keep only the requirement related items in this doc. and for design choices,
+  drop the ones not used for v1, other goes to a short list, we will discuss
+  the design later
+
+  Show me the revised plan
+
+⏺ Here is the revised draft, scoped to v1 (mandatory requirements only, Python,
+  no replication).
+
+  # Requirements: Distributed Key-Value Store (v1)
+
+  Source: `takehome_assignment_prompt.md`. This document restates the
+  requirements, records the
+  v1 scope decisions, lists the remaining ambiguities with a preferred choice,
+  and defers
+  design topics to the design doc.
+
+  ## 0. Scope decisions for v1
+
+  | Decision | Choice |
+  |----------|--------|
+  | Target | All mandatory requirements: Put/Get/Delete, per-key
+  linearizability, restart recovery, latency goals at 1K ops/s |
+  | Optional requirements (durability across server loss, availability on
+  failure, partition handling) | Not in v1. Design must not preclude adding
+  replication later |
+  | Language | Python. Design phase must check that Python can hit the p99
+  targets at 1K ops/s with fsync'd writes |
+  | Replication / consensus | None in v1. Raft or alternatives deferred |
+  | Dataset size | Assumed to fit in RAM |
+  | Time budget | One day |
+  | Demo | Steady-state load at 1K ops/s with a p99 report, plus a restart test
+  showing data survives |
+
+  ## 1. Functional requirements
+
+  | ID | Requirement | Source |
+  |----|-------------|--------|
+  | F1 | `Put(key, value)`: create or fully replace; ack only after the write is
+  durable on disk | prompt |
+  | F2 | `Get(key)`: return the value, or an explicit `NotFound` | prompt |
+  | F3 | `Delete(key)`: remove the key; deleting an absent key succeeds | prompt
+  |
+  | F4 | Keys and values are opaque bytes; an empty value is valid and distinct
+  from a missing key | prompt |
+  | F5 | Limits: key ≤ 256 B, value ≤ 64 KiB; oversize requests are rejected
+  with an explicit error | derived |
+  | F6 | Each operation touches exactly one key; no multi-key or transactional
+  operations | prompt |
+  | F7 | Multiple clients may operate on the same key concurrently | prompt |
+  | F8 | Request/response format is ours to define | prompt |
+  | F9 | Static deployment of 1–4 storage servers, each a separate process,
+  deployable on one machine | prompt |
+  | F10 | Start/stop scripts | deliverables |
+  | F11 | Workload generator that issues requests and reports latency
+  percentiles at 1K ops/s | deliverables |
+  | F12 | Coding-agent prompts used to build the system are kept and delivered |
+  deliverables |
+
+  Out of scope: authentication, multi-region, dynamic membership, range/scan,
+  TTL,
+  CAS/conditional writes, transactions, replication (v1).
+
+  ## 2. Non-functional requirements
+
+  | Category | Requirement | v1 |
+  |----------|-------------|----|
+  | Consistency | Per-key linearizability: a completed Put/Delete is visible to
+  every later Get; concurrent ops on a key serialize in some single order; no
+  cross-key ordering | must |
+  | Restart recovery | A process restart (clean or crash) must not lose
+  acknowledged writes; data persisted to disk | must |
+  | Performance | 1,000 ops/s sustained, 80% reads / 20% writes+deletes; p99
+  read < 50 ms, p99 write < 100 ms, healthy system | must |
+  | Workload | key ~32 B avg (max 256 B), value ~1 KiB avg (max 64 KiB) | sizing
+  input |
+  | Capacity | Dataset fits in RAM (assumption); persistence still required |
+  constraint |
+  | Deployment | single region, single machine for the demo, 1–4 processes,
+  static config | constraint |
+  | Durability across server/disk loss | Acked writes survive loss of one server
+  | deferred |
+  | Availability after a server failure | Brief interruption only; survivors
+  serve affected data | deferred |
+  | Partition behavior | Never return stale data as success; return unavailable
+  or time out | deferred |
+
+  ## 3. Ambiguities relevant to v1
+
+  ### A1. What "1–4 servers" means without replication
+  Why it matters: F9 requires multiple processes, but v1 has no replication, so
+  each server must own a disjoint subset of keys.
+
+  | Option | Pros | Cons |
+  |--------|------|------|
+  | Single server only in v1 | simplest | does not exercise F9; harder to grow
+  later |
+  | N servers, keys hash-partitioned, each key lives on exactly one server |
+  satisfies F9; same code path for N=1 | losing a server loses its keys
+  (acceptable, durability is defered) |
+
+  Preferred: **hash-partitioned N servers**, N=1 is the degenerate case. Who
+  routes a key to its server is a design-phase topic.
+
+  ### A2. Durability on disk for a single node
+  Why it matters: F1 says "report success after the write satisfies the
+  durability requirement"; with no replication, that means on-disk before ack.
+
+  | Option | Safety | Write latency |
+  |--------|--------|---------------|
+  | fsync per write | survives power loss | one fsync per write (~1–10 ms on
+  SSD) |
+  | group commit: batch writes, one fsync per batch | survives power loss |
+  amortized; adds a few ms of queueing |
+  | write without fsync | survives process crash only, not power loss | lowest |
+
+  Preferred: **fsync before ack, with group commit** if per-write fsync does not
+  meet p99 in Python. Process-crash-only durability is the fallback only if
+  measurements force it, and it must be stated in the design doc.
+
+  ### A3. Dataset size and key cardinality
+  Resolved by assumption: fits in RAM. Estimate: 200 writes/s × 1 KiB is ~17
+  GB/day only if every write is a new key; the realistic key set (job status,
+  config) is bounded. Assume ≤ 1M live keys.
+
+  ### A4. Latency measurement point
+  Why it matters: "service boundary" could mean the server handler or
+  client-observed.
+  Preferred: headline number is client-observed from the workload generator on
+  the same machine; also log server-side handler latency.
+
+  ### A5. Workload generator
+
+  | Choice | Options | Preferred |
+  |--------|---------|-----------|
+  | Load model | closed-loop (fixed concurrency) vs open-loop (fixed arrival
+  rate) | open-loop at 1,000 ops/s |
+  | Key distribution | uniform vs Zipfian | Zipfian over ~100K keys, uniform as
+  an option |
+  | Operation mix | fixed 80/20 | 80% Get, 15% Put, 5% Delete |
+  | Verification | none vs per-key last-write check | per-key checker: track
+  acked writes, flag stale reads |
+  | Reporting | mean vs histogram | p50/p95/p99/p999 via histogram, printed and
+  saved |
+
+  ### A6. Retries and idempotency
+  A timed-out Put may already have been applied. Put/Delete are idempotent for
+  the same value, so no request IDs; the client retries after timeout.
+
+  ### A7. Concurrency semantics
+  No CAS or versions. Last writer wins by the server's single per-key order.
+
+  ### A8. Restart test definition
+  Why it matters: "recover after a process restart" needs a reproducible check.
+  Preferred: write a known set of keys, kill the server with SIGKILL mid-load,
+  restart, verify every acked write is readable and every acked delete returns
+  `NotFound`.
+
+  ## 4. Deferred design topics
+
+  To be decided in the design doc; not requirements.
+
+  - Wire protocol and request/response format (HTTP/JSON, gRPC, custom framing).
+  - Client routing to the owning server (client-side hashing vs server
+  forwarding).
+  - Storage layout: in-memory dict + append-only log + snapshots vs embedded
+  store (SQLite, LMDB).
+  - Python runtime model: asyncio vs threads vs multiprocess; verify fsync'd
+  writes meet p99 at 1K ops/s.
+  - Log compaction / snapshot trigger.
+  - Future: replication and consensus (Raft or alternative), read path for
+  linearizable replicated reads, failure detection, replacing a lost server.
+
+  ## 5. Assumptions, no answer needed
+
+  - Static config file lists server IDs, addresses, ports; all on localhost with
+  distinct ports and data dirs.
+  - No TLS, no auth, no multi-tenancy.
+  - macOS and Linux supported; single-machine demo only.
+  - Oversize key/value returns an invalid-argument error; empty key is rejected.
+  - Generator and servers share one laptop; absolute latencies are not
+  representative of a real network, but the p99 goals are enforced as written.
+
+  Still unwritten. Tell me when to save it to doc/requirements.md, or send your
+  edits.
+
+  Ran 1 shell command, wrote 1 memory (ctrl+o to expand)
+
+⏺ The revised draft above is ready for your edits. I also saved your v1 scope
+  decisions to memory so later sessions do not re-propose Raft or replication
+  for v1.
+
+  Summary of what changed from the first draft:
+
+  - New section 0 records the eight answers as v1 scope decisions.
+  - Optional requirements moved to "deferred" rows in the non-functional table
+    instead of targets.
+  - Dropped the replication, consensus, cluster-size quorum, read-path,
+    client-routing, failover-timing and lost-server items.
+  - Kept only v1-relevant ambiguities: hash partitioning across 1–4 servers,
+    fsync policy, dataset size, latency measurement point, workload generator,
+    retries, concurrency, and a concrete restart test.
+  - Section 4 is the short list of deferred design topics for the design
+    discussion, including the Python fsync feasibility check.
+
+  Nothing is written to doc/requirements.md yet. Send your edits or tell me to
+  save it as shown.
+
+❯ A1: Accepted — hash-partitioned N servers, each key owned by exactly
+     one server;
+  A2: we should always use fsync before ack to make sure durability, no
+  fallback you suggested. Use group commit** if per-write fsync does not meet
+  p99 in Python
+  Accept other assumptions. Now approved, write the requirement doc to
+  docs/requirement.md and commit
+
+⏺ Writing docs/requirement.md with A1 accepted and A2 tightened to mandatory
+  fsync-before-ack, then committing.
+
+⏺ Bash(mkdir -p /Users/Carl_Guo/Desktop/Distributed_kv_store/docs && cat >
+      /Users/Carl_Guo/Desktop/Distributed_kv_store/docs/requirement.md <<'EOF'
+      # Requirements: Dis…)
+  ⎿  Created docs/requirement.md (+121 -0)
+        1 +# Requirements: Distributed Key-Value Store (v1)              
+        2 +                                                              
+        3 +Source: `takehome_assignment_prompt.md`. This document restate
+          +s the requirements, records the                               
+        4 +v1 scope decisions, lists the remaining ambiguities with the c
+          +hosen resolution, and defers                                  
+        5 +design topics to the design doc.                              
+        6 +                                                              
+        7 +## 0. Scope decisions for v1                                  
+        8 +                                                              
+        9 +| Decision | Choice |                                         
+       10 +|----------|--------|                                         
+       11 +| Target | All mandatory requirements: Put/Get/Delete, per-key
+          + linearizability, restart recovery, latency goals at 1K ops/s 
+          +|                                                             
+       12 +| Optional requirements (durability across server loss, availa
+          +bility on failure, partition handling) | Not in v1. Design mus
+          +t not preclude adding replication later |                     
+       13 +| Language | Python. Design phase must check that Python can h
+          +it the p99 targets at 1K ops/s with fsync'd writes |          
+       14 +| Replication / consensus | None in v1. Raft or alternatives d
+          +eferred |                                                     
+       15 +| Dataset size | Assumed to fit in RAM |                      
+       16 +| Time budget | One day |                                     
+       17 +| Demo | Steady-state load at 1K ops/s with a p99 report, plus
+          + a restart test showing data survives |                       
+       18 +                                                              
+       19 +## 1. Functional requirements                                 
+       20 +                                                              
+       21 +| ID | Requirement | Source |                                 
+       22 +|----|-------------|--------|                                 
+       23 +| F1 | `Put(key, value)`: create or fully replace; ack only af
+          +ter the write is durable on disk | prompt |                   
+       24 +| F2 | `Get(key)`: return the value, or an explicit `NotFound`
+          + | prompt |                                                   
+       25 +| F3 | `Delete(key)`: remove the key; deleting an absent key s
+          +ucceeds | prompt |                                            
+       26 +| F4 | Keys and values are opaque bytes; an empty value is val
+          +id and distinct from a missing key | prompt |                 
+       27 +| F5 | Limits: key ≤ 256 B, value ≤ 64 KiB; oversize requests 
+          +are rejected with an explicit error | derived |               
+       28 +| F6 | Each operation touches exactly one key; no multi-key or
+          + transactional operations | prompt |                          
+       29 +| F7 | Multiple clients may operate on the same key concurrent
+          +ly | prompt |                                                 
+       30 +| F8 | Request/response format is ours to define | prompt |   
+       31 +| F9 | Static deployment of 1–4 storage servers, each a separa
+          +te process, deployable on one machine | prompt |              
+       32 +| F10 | Start/stop scripts | deliverables |                   
+       33 +| F11 | Workload generator that issues requests and reports la
+          +tency percentiles at 1K ops/s | deliverables |                
+       34 +| F12 | Coding-agent prompts used to build the system are kept
+          + and delivered | deliverables |                               
+       35 +                                                              
+       36 +Out of scope: authentication, multi-region, dynamic membership
+          +, range/scan, TTL,                                            
+       37 +CAS/conditional writes, transactions, replication (v1).       
+       38 +                                                              
+       39 +## 2. Non-functional requirements                             
+       40 +                                                              
+     … 81 more lines (ctrl+o to expand)
+
+⏺ Done. The requirements doc is written and committed.
+
+  - File: docs/requirement.md, committed as c87e7be.
+  - A1 recorded as a decision: hash-partitioned N servers, one owner per key,
+    N=1 as the degenerate case.
+  - A2 tightened: fsync before ack is now a must-level non-functional
+    requirement with no unsynced fallback. Per-write fsync first, group commit
+    only if the write p99 misses.
+  - Section 4 holds the deferred design topics (protocol, routing, storage
+    layout, Python runtime model, future replication) for the design discussion.
+
+  One note: takehome_assignment_prompt.md is still untracked. I left it out
+  since you only asked to commit the doc. Say so if you want it added.
+
+  Next step is the design doc, starting with the Python fsync feasibility check
+  at 1K ops/s.
+
+❯ <ide_opened_file>The user opened the file
+  /Users/Carl_Guo/Desktop/Distributed_kv_store/docs/requirement.md in the IDE.
+  This may or may not be related to the current task.</ide_opened_file>
+
+❯ check the feasibility using python to complete this task at 1k ops/s and meet
+  the p99 requirement
+
+⏺ I'll measure rather than guess: first raw fsync cost on this Mac, then a
+  throwaway asyncio server with a fsync'd append log driven at 1K ops/s
+  open-loop, reporting p99.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Key finding: macOS's os.fsync doesn't actually flush to disk (it's
+  near-instant and misleading), while F_FULLFSYNC is the real deal at ~4ms
+  median/7ms p99—meaning per-write fsync at 200 writes/s would eat ~0.8s of disk
+  time per second, so group commit is likely needed on Mac. Moving on to build
+  the end-to-end prototype. · summary
+  Ran 2 shell commands (ctrl+o to expand)
+
+⏺ Both modes meet the targets. Group commit gives large margin on reads. Two
+  more checks: headroom at 2x load, and a longer 60 s run for stability.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Shell word-splitting bug in my loop (zsh does not split $cfg). Rerunning with
+  explicit arguments.
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+⏺ Python is feasible. A throwaway asyncio server with a real-fsync append log
+  meets both p99 targets at 1K ops/s with wide margin, provided writes use group
+  commit.
+
+  Measurements (Python 3.14, this Mac, 16 client connections, open-loop 80/15/5
+  mix, latency includes queueing):
+
+  ┌─────────────────────────────────┬────────┬────────┬────────┬───────────┐
+  │             Config              │  Get   │  Put   │  Del   │  Server   │
+  │                                 │  p99   │  p99   │  p99   │    CPU    │
+  ├─────────────────────────────────┼────────┼────────┼────────┼───────────┤
+  │ Per-write F_FULLFSYNC, 1K       │ 36 ms  │ 56 ms  │ 52 ms  │           │
+  │ ops/s, 20 s                     │        │        │        │           │
+  ├─────────────────────────────────┼────────┼────────┼────────┼───────────┤
+  │ Group commit, 1K ops/s, 20 s    │ 0.8 ms │ 30 ms  │ 30 ms  │           │
+  ├─────────────────────────────────┼────────┼────────┼────────┼───────────┤
+  │ Group commit, 1K ops/s, 60 s    │ 0.9 ms │ 10.8   │ 10.8   │ 14%       │
+  │                                 │        │ ms     │ ms     │           │
+  ├─────────────────────────────────┼────────┼────────┼────────┼───────────┤
+  │ Group commit, 2K ops/s, 20 s    │ 0.5 ms │ 11.2   │ 10.5   │ 13%       │
+  │                                 │        │ ms     │ ms     │           │
+  └─────────────────────────────────┴────────┴────────┴────────┴───────────┘
+
+  Targets are 50 ms read, 100 ms write. Both fsync strategies pass, but
+  per-write fsync leaves little margin and group commit is the clear choice.
+
+  Findings that must shape the design:
+
+  - macOS fsync is not durable. os.fsync returned in 0.02 ms, which means the
+    data only reached the drive cache. Real durability needs fcntl(fd,
+    F_FULLFSYNC), which costs about 4 ms median and 7 ms p99 per call. On Linux,
+    os.fsync is the real thing. The storage layer needs a platform switch.
+  - Group commit is required, not optional. At 200 writes/s, serialized
+    per-write F_FULLFSYNC consumes roughly 0.8 s of disk time per second. One
+    flush per batch brings write p99 to about 11 ms.
+  - The flush must run off the event loop. The prototype runs the fsync in a
+    thread executor so reads keep flowing during a flush. With that, read p99 is
+    under 1 ms even at 2K ops/s.
+  - Single process per server is enough. Server CPU sat around 14% at 1K ops/s,
+    so asyncio in one process has headroom. No multiprocessing needed for v1.
+  - Head-of-line blocking matters for the client. In per-write mode, reads
+    queued behind a put on the same connection inherited its latency (36 ms read
+    p99). The workload generator should use enough connections, or separate
+    read and write connections.
+
+  The prototype scripts are in the session scratchpad, not the repo:
+  /private/tmp/claude-502/-Users-Carl-Guo-Desktop-Distributed-kv-store/54546b18-
+  1374-46f9-80f9-a61fd8c938c2/scratchpad/proto_server.py, proto_client.py, and
+  fsync_bench.py. They are throwaway, not v1 code. Nothing in the repo changed.
+  These results and the F_FULLFSYNC rule should go into the design doc when we
+  write it.
+
+❯ Copy the prototype scripts into a spike directory, and write a doc to
+  indicate how to setup and run the test, what is the result and findings,  Add
+  one more run: N=3 servers
+  on this machine — they share one physical disk and each issues its own
+  F_FULLFSYNC
+
+⏺ I'll copy the scripts into spike/, extend the client to route keys by hash
+  across multiple servers, run the N=3 test, and write the doc.
+
+⏺ Bash(mkdir -p spike && S=/private/tmp/claude-502/-Users-Carl-Guo-Desktop-Distr
+      ibuted-kv-store/54546b18-1374-46f9-80f9-a61fd8c938c2/scratchpad && cp
+      $S/fsync_bench.py…)
+  ⎿  Created spike/fsync_bench.py (+16 -0)
+       1 +import os, time, fcntl, statistics, sys                        
+       2 +path = sys.argv[1]                                             
+       3 +def run(label, sync):                                          
+       4 +    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 
+         +0o644)                                                         
+       5 +    lat = []                                                   
+       6 +    for _ in range(300):                                       
+       7 +        t = time.perf_counter()                                
+       8 +        os.write(fd, b"x" * 1100)                              
+       9 +        sync(fd)                                               
+      10 +        lat.append((time.perf_counter() - t) * 1000)           
+      11 +    os.close(fd); os.unlink(path)                              
+      12 +    lat.sort()                                                 
+      13 +    print(f"{label:14s} p50={lat[len(lat)//2]:.2f}ms p99={lat[i
+         +nt(len(lat)*.99)]:.2f}ms max={lat[-1]:.2f}ms")                 
+      14 +run("write+fsync", os.fsync)                                   
+      15 +run("write+FULLFSYNC", lambda fd: fcntl.fcntl(fd, fcntl.F_FULLF
+         +SYNC))                                                         
+      16 +run("write only", lambda fd: None)                             
+  ⎿  Created spike/proto_client.py (+38 -0)
+       1 +"""Open-loop workload generator for the spike. Routes each key 
+         +to one server by hash.                                         
+       2 +usage: python3 proto_client.py <port[,port,...]> <ops_per_sec> 
+         +<seconds>                                                      
+       3 +"""                                                            
+       4 +import asyncio, hashlib, os, random, struct, sys, time         
+       5 +PORTS = [int(p) for p in sys.argv[1].split(",")]               
+       6 +RATE = int(sys.argv[2]); SECS = int(sys.argv[3]); CONNS = 16   
+       7 +lat = {"get": [], "put": [], "del": []}                        
+       8 +random.seed(1); keys = [os.urandom(16).hex().encode() for _ in 
+         +range(100_000)]                                                
+       9 +owner = {k: int(hashlib.md5(k).hexdigest(), 16) % len(PORTS) fo
+         +r k in keys}                                                   
+      10 +val = os.urandom(1024)                                         
+      11 +async def worker(q):                                           
+      12 +    conns = [await asyncio.open_connection("127.0.0.1", p) for 
+         +p in PORTS]                                                    
+      13 +    while True:                                                
+      14 +        item = await q.get()                                   
+      15 +        if item is None: break                                 
+      16 +        op, start = item                                       
+      17 +        key = keys[min(int(random.paretovariate(1.2)) % len(key
+         +s), len(keys)-1)]                                              
+      18 +        r, w = conns[owner[key]]                               
+      19 +        body = struct.pack(">H", len(key)) + key + (val if op =
+         += 1 else b"")                                                  
+      20 +        w.write(bytes([op]) + struct.pack(">I", len(body)) + bo
+         +dy); await w.drain()                                           
+      21 +        n = struct.unpack(">I", await r.readexactly(4))[0]; awa
+         +it r.readexactly(n)                                            
+      22 +        lat[("get","put","del")[op]].append((time.perf_counter(
+         +) - start) * 1000)                                             
+      23 +    for _, w in conns: w.close()                               
+      24 +async def main():                                              
+      25 +    q = asyncio.Queue(); ws = [asyncio.create_task(worker(q)) f
+         +or _ in range(CONNS)]                                          
+      26 +    interval = 1 / RATE; t = time.perf_counter(); end = t + SEC
+         +S                                                              
+      27 +    while t < end:                                             
+      28 +        r = random.random(); op = 0 if r < .8 else (1 if r < .9
+         +5 else 2)                                                      
+      29 +        q.put_nowait((op, time.perf_counter()))   # open-loop: 
+         +latency includes queueing                                      
+      30 +        t += interval; d = t - time.perf_counter()             
+      31 +        if d > 0: await asyncio.sleep(d)                       
+      32 +    for _ in ws: q.put_nowait(None)                            
+      33 +    await asyncio.gather(*ws)                                  
+      34 +    for k, v in lat.items():                                   
+      35 +        v.sort(); n = len(v)                                   
+      36 +        if n: print(f"{k:4s} n={n:6d} p50={v[n//2]:.2f} p99={v[
+         +int(n*.99)]:.2f} max={v[-1]:.2f} ms")                          
+      37 +    tot = sum(len(v) for v in lat.values()); print(f"achieved {
+         +tot/SECS:.0f} ops/s across {len(PORTS)} server(s)")            
+      38 +asyncio.run(main())                                            
+  ⎿  Created spike/proto_server.py (+52 -0)
+       1 +import asyncio, os, sys, struct, fcntl, time                   
+       2 +MODE = sys.argv[1]           # "perwrite" | "group"            
+       3 +PORT = int(sys.argv[2])                                        
+       4 +LOG = sys.argv[3]                                              
+       5 +store = {}                                                     
+       6 +fd = os.open(LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644
+         +)                                                              
+       7 +def fullsync(): fcntl.fcntl(fd, fcntl.F_FULLFSYNC)             
+       8 +pending = []           # futures waiting for the next fsync    
+       9 +buf = []                                                       
+      10 +async def syncer():                                            
+      11 +    while True:                                                
+      12 +        await asyncio.sleep(0)      # yield; batch whatever arr
+         +ived                                                           
+      13 +        if not buf:                                            
+      14 +            await asyncio.sleep(0.0005); continue              
+      15 +        data = b"".join(buf); waiters = pending[:]; buf.clear()
+         +; pending.clear()                                              
+      16 +        os.write(fd, data)                                     
+      17 +        await asyncio.get_running_loop().run_in_executor(None, 
+         +fullsync)                                                      
+      18 +        for w in waiters: w.set_result(None)                   
+      19 +async def durable(rec):                                        
+      20 +    if MODE == "perwrite":                                     
+      21 +        os.write(fd, rec)                                      
+      22 +        await asyncio.get_running_loop().run_in_executor(None, 
+         +fullsync)                                                      
+      23 +    else:                                                      
+      24 +        f = asyncio.get_running_loop().create_future()         
+      25 +        buf.append(rec); pending.append(f); await f            
+      26 +async def handle(r, w):                                        
+      27 +    try:                                                       
+      28 +        while True:                                            
+      29 +            hdr = await r.readexactly(5)                       
+      30 +            op, n = hdr[0], struct.unpack(">I", hdr[1:])[0]    
+      31 +            body = await r.readexactly(n)                      
+      32 +            klen = struct.unpack(">H", body[:2])[0]            
+      33 +            key, val = body[2:2+klen], body[2+klen:]           
+      34 +            if op == 0:            # get                       
+      35 +                v = store.get(key)                             
+      36 +                resp = b"\x00" + (b"\x01" + v if v is not None 
+         +else b"\x00")                                                  
+      37 +            elif op == 1:          # put                       
+      38 +                store[key] = val                               
+      39 +                await durable(struct.pack(">BHI", 1, klen, len(
+         +val)) + key + val)                                             
+      40 +                resp = b"\x00"                                 
+     … 12 more lines (ctrl+o to expand)
+  ⎿  Created spike/run.sh (+14 -0)
+       1 +#!/usr/bin/env bash                                            
+       2 +# usage: ./run.sh <perwrite|group> <num_servers> <ops_per_sec> 
+         +<seconds>                                                      
+       3 +set -u                                                         
+       4 +MODE=${1:-group}; N=${2:-1}; RATE=${3:-1000}; SECS=${4:-20}    
+       5 +cd "$(dirname "$0")"; mkdir -p data; PIDS=(); PORTS=()         
+       6 +for i in $(seq 1 "$N"); do                                     
+       7 +  port=$((7200 + i)); rm -f "data/kv_$i.log"                   
+       8 +  python3 proto_server.py "$MODE" "$port" "data/kv_$i.log" & PI
+         +DS+=($!); PORTS+=("$port")                                     
+       9 +done                                                           
+      10 +sleep 0.5                                                      
+      11 +echo "== mode=$MODE servers=$N rate=$RATE ops/s duration=${SECS
+         +}s =="                                                         
+      12 +python3 proto_client.py "$(IFS=,; echo "${PORTS[*]}")" "$RATE" 
+         +"$SECS"                                                        
+      13 +for p in "${PIDS[@]}"; do ps -o %cpu= -p "$p" | awk -v p="$p" '
+         +{print "server pid " p " cpu%:", $1}'; kill "$p"; done         
+      14 +wait 2>/dev/null; rm -rf data                                  
+
+⏺ N=3 passes comfortably with group commit. Writing the spike doc now.
+
+⏺ Bash(cat > spike/README.md <<'EOF'
+      # Spike: can Python meet the latency targets with fsync'd writes?…)
+  ⎿  Created spike/README.md (+91 -0)
+       1 +# Spike: can Python meet the latency targets with fsync'd write
+         +s?                                                             
+       2 +                                                               
+       3 +Question from [docs/requirement.md](../docs/requirement.md) sec
+         +tion 0: can a Python server                                    
+       4 +sustain 1,000 ops/s (80% Get, 15% Put, 5% Delete) with every wr
+         +ite fsync'd before ack, while                                  
+       5 +keeping p99 below 50 ms for reads and 100 ms for writes?       
+       6 +                                                               
+       7 +Answer: **yes, with group commit.** Measured 2026-10-25 on a Ma
+         +cBook (APFS, internal SSD),                                    
+       8 +Python 3.14, no third-party packages.                          
+       9 +                                                               
+      10 +## Files                                                       
+      11 +                                                               
+      12 +| File | Purpose |                                             
+      13 +|------|---------|                                             
+      14 +| `fsync_bench.py` | Raw cost of `os.fsync`, `F_FULLFSYNC`, and
+         + plain write for a 1.1 KB append |                             
+      15 +| `proto_server.py` | Throwaway asyncio TCP server: dict state,
+         + append-only log, fsync per write or group commit |            
+      16 +| `proto_client.py` | Open-loop workload generator; hashes each
+         + key to one server; reports p50/p99/max |                      
+      17 +| `run.sh` | Starts N servers, runs the client, prints server C
+         +PU, stops everything |                                         
+      18 +                                                               
+      19 +The server and client are not v1 code. They exist only to measu
+         +re.                                                            
+      20 +                                                               
+      21 +## Setup                                                       
+      22 +                                                               
+      23 +Requirements: Python 3.10+, macOS or Linux, nothing to install.
+      24 +                                                               
+      25 +```bash                                                        
+      26 +cd spike                                                       
+      27 +python3 fsync_bench.py ./bench.log                             
+      28 +./run.sh group 1 1000 20        # mode, number of servers, ops/
+         +s, seconds                                                     
+      29 +./run.sh perwrite 1 1000 20                                    
+      30 +./run.sh group 3 1000 30                                       
+      31 +```                                                            
+      32 +                                                               
+      33 +Modes: `perwrite` issues one `F_FULLFSYNC` per Put/Delete. `gro
+         +up` appends to a buffer and a                                  
+      34 +single flusher task issues one `F_FULLFSYNC` per batch, then wa
+         +kes all waiting requests. The                                  
+      35 +fsync runs in a thread executor so the event loop keeps serving
+         + reads.                                                        
+      36 +                                                               
+      37 +Client: 16 connections per server, open-loop arrival at the req
+         +uested rate, so reported latency                               
+      38 +includes queueing time. Key distribution is Pareto-skewed over 
+         +100K keys, values 1 KiB.                                       
+      39 +                                                               
+      40 +## Results                                                     
+     … 51 more lines (ctrl+o to expand)
+
+⏺ The spike directory is in place and the N=3 run is done. Not committed, since
+  you did not ask for that this time.
+
+  What's in spike/:
+  - README.md (spike/README.md) with setup, how to run, the full results table,
+    and findings.
+  - fsync_bench.py (spike/fsync_bench.py), proto_server.py
+    (spike/proto_server.py), proto_client.py (spike/proto_client.py) copied from
+    the scratchpad. The client now takes a comma-separated port list and routes
+    each key to one server by hash.
+  - run.sh (spike/run.sh) starts N servers, runs the client, prints per-server
+    CPU, and tears everything down. Example: ./spike/run.sh group 3 1000 30.
+
+  N=3 result, three processes sharing one SSD, each with its own F_FULLFSYNC, 1K
+  ops/s total for 30 s:
+
+  ┌─────────────────┬─────────┬─────────┬─────────┬────────────────┐
+  │      Mode       │ Get p99 │ Put p99 │ Del p99 │ CPU per server │
+  ├─────────────────┼─────────┼─────────┼─────────┼────────────────┤
+  │ group commit    │ 1.7 ms  │ 15.4 ms │ 14.7 ms │ 4–9%           │
+  ├─────────────────┼─────────┼─────────┼─────────┼────────────────┤
+  │ per-write fsync │ 15.7 ms │ 34.6 ms │ 35.2 ms │ 1–8%           │
+  └─────────────────┴─────────┴─────────┴─────────┴────────────────┘
+
+  Both pass. Disk contention from three independent flushers raised group-commit
+  write p99 from 11 ms to 15 ms, still far inside the 100 ms target. Per-write
+  fsync with three servers beat the single-server case because each server
+  flushes only a third of the writes.
+
+  The README also records the macOS os.fsync finding, the group-commit and
+  executor requirements, and that log replay and the restart test are still
+  untested and belong to v1.
+
+❯ I have verified this works. Now commit this
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Committed as 9dab02d with all five files under spike/.
+
+  takehome_assignment_prompt.md remains untracked, as before. Next up is the
+  design doc, which can now cite the spike results for the storage layer
+  decisions.
+
+❯ Based on the spike result, we should use python and use group commit for this
+  design. But I think in the spike script, a Put/Delete is visible to Get
+  before it is durable, correct me if I am wrong. What is the risk of this?
+  What is the alternatives
+  Then for the design items that we have @docs/requirement.md , for each topic,
+  list 2-3 options and their tradeoff in a table, plus your recommendation and
+  reason
+  ⎿  Read docs/requirement.md (122 lines)
+
+⏺ You're right about the spike. In proto_server.py the handler does store[key] =
+  val and only then awaits the fsync. A Get arriving in that window returns the
+  new value before it is durable.
+
+  The risk. Client A's Put is applied in memory, client B reads the new value
+  and acts on it, then the process dies before the batch is flushed. After
+  restart the key has its old value. B observed a write that, from the system's
+  own durable history, never happened. A got no ack, so A may not retry. This is
+  a dirty read, and it breaks the per-key consistency requirement across a
+  restart: the system's history now contains a read of a value no completed
+  write ever produced. At the spike's flush cadence the window is 5–15 ms per
+  write, roughly 200 times a second, so the restart test could hit it.
+
+  Alternatives
+
+  Option: Apply after commit (recommended)
+  How: Handler appends the record to the batch and waits. The flusher fsyncs,
+  then applies the batch to the dict in log order, then wakes the waiters.
+  Consistency: No uncommitted value is ever readable. Memory state always equals
+
+  a durable log prefix.
+  Cost: Reads unchanged. Writes unchanged, the apply is a dict assignment.
+  Concurrent Puts to one key resolve by log order, which is also the ack order.
+  ────────────────────────────────────────
+  Option: Apply early, reads wait
+  How: Keep apply-before-fsync but tag each key with the log offset of its last
+  write. A Get on a key whose offset is beyond the durable offset waits for the
+   next flush.
+  Consistency: Correct, and reads of cold keys stay fast.
+  Cost: Reads of hot recently-written keys pay the flush latency. More state and
+
+  more code for no benefit over option 1 at this workload.
+  ────────────────────────────────────────
+  Option: Apply early, accept dirty reads
+  How: Current spike behaviour.
+  Consistency: Violates the requirement across a crash.
+  Cost: None. Not acceptable given "no weaker mode".
+
+  Recommendation: apply after commit. It is the smallest change, it makes the
+  invariant easy to state and test, and it keeps the same structure a replicated
+  version would need later, where apply happens at commit as well.
+
+  Design topics from section 4
+
+  1. Wire protocol
+
+  Option: Custom length-prefixed binary over TCP
+  Pros: Opaque bytes with zero encoding overhead. Smallest code. Spike already
+  uses it and hits the numbers. Persistent connections, pipelining is trivial.
+  Cons: No curl debugging. Must write a client library. Hand-rolled framing is a
+
+  bug surface.
+  ────────────────────────────────────────
+  Option: HTTP/1.1 with raw body (e.g. aiohttp, PUT/GET/DELETE /keys/{key})
+  Pros: Grader can poke it with curl. Standard semantics map cleanly to the
+  three
+  ops. Keys in the URL path need encoding.
+  Cons: Framework dependency and parsing overhead. Keys with arbitrary bytes
+  need
+  base64 or hex in the URL. Keep-alive handling in the load generator matters
+  for p99.
+  ────────────────────────────────────────
+  Option: gRPC
+  Pros: Typed schema, generated client.
+  Cons: Heavy dependency, codegen step, a one-day budget does not justify it.
+
+  Recommendation: custom binary over TCP, with a small Python client library
+  shared by the load generator and a tiny CLI for manual checks. Reason: it is
+  the measured path, opaque bytes fit naturally, and a day is not enough to also
+  tune an HTTP stack for p99. If curl-ability matters to you, HTTP with
+  hex-encoded keys is the fallback.
+
+  2. Client routing to the owning server
+
+  Option: Client-side hashing: client reads the static server list and hashes
+  the
+  key itself
+  Pros: One hop. Simplest server. Matches spike.
+  Cons: Every client needs the config and the hash function. Rebalancing on
+  config change is a client concern (out of scope).
+  ────────────────────────────────────────
+  Option: Any server forwards to the owner
+  Pros: Clients only need one address. Server stays authoritative about
+  placement.
+  Cons: Extra hop on 1 - 1/N of requests, roughly doubles those latencies.
+  Forwarding code and connection pooling on every server.
+  ────────────────────────────────────────
+  Option: Separate stateless router process
+  Pros: Clients see one endpoint, servers stay simple.
+  Cons: One more process to start and stop, extra hop on every request, and the
+  router is a single point of failure.
+
+  Recommendation: client-side hashing in the client library, plus a cheap
+  WRONG_OWNER error if a server receives a key it does not own, so
+  misconfiguration fails loudly. Reason: it is what a static deployment allows,
+  and it keeps the hot path at one hop.
+
+  3. Storage layout
+
+  Option: In-memory dict + append-only log + periodic snapshot
+  Pros: Measured. Full control of fsync. Reads are a dict lookup. Simple replay.
+  Cons: Must write compaction and recovery yourself. Log grows until compacted.
+  Dataset must fit RAM, which is the stated assumption.
+  ────────────────────────────────────────
+  Option: SQLite with synchronous=FULL, WAL mode
+  Pros: Durability, recovery and compaction come for free. Single file.
+  Cons: On macOS SQLite uses fsync, not F_FULLFSYNC, unless you set PRAGMA
+  fullfsync=ON. Group commit requires batching writes into one transaction
+  yourself. Per-transaction commit cost is a full fsync, so the same flusher
+  structure is needed anyway.
+  ────────────────────────────────────────
+  Option: LMDB (lmdb package)
+  Pros: Very fast reads, ACID, no compaction.
+  Cons: Third-party native dependency. Same commit-per-batch structure needed.
+  Less transparent for the restart test.
+
+  Recommendation: dict + log + snapshot. Reason: it is already proven, the
+  restart test is easy to reason about, and every durability decision is visible
+  in the code. The one piece to add is replay and snapshot, covered in topic 5.
+
+  4. Python runtime model
+
+  Option: Single asyncio process, fsync in a thread executor
+  Pros: Measured at 14% CPU for 1K ops/s, 2K also passes. No locks needed for
+  the
+  dict, so per-key ordering is trivial.
+  Cons: One core. A slow handler stalls everyone.
+  ────────────────────────────────────────
+  Option: Thread per connection with a lock around the dict and log
+  Pros: Familiar model.
+  Cons: GIL means no more throughput than asyncio, plus locking and a harder
+  ordering story.
+  ────────────────────────────────────────
+  Option: Multiprocess, one process per core sharing a port
+  Pros: Scales CPU.
+  Cons: Shared state across processes needs IPC or sharding again. Pointless at
+  14% CPU.
+
+  Recommendation: single asyncio process per server. Reason: it meets the
+  targets with room, and single-threaded apply gives per-key ordering with no
+  locks. The only blocking call is fsync, and it runs in the executor.
+
+  5. Log compaction and snapshot
+
+  Option: Snapshot when log exceeds a size threshold (e.g. 64 MB or N entries),
+  then truncate
+  Pros: Bounded recovery time and disk. Standard.
+  Cons: Snapshot writes the whole dict. At 1 GB that is seconds of IO, needs to
+  run off the loop or in a child process.
+  ────────────────────────────────────────
+  Option: No compaction, replay the whole log on restart
+  Pros: Nothing to build.
+  Cons: Log grows ~17 GB/day at worst case; restart time grows without bound.
+  ────────────────────────────────────────
+  Option: Snapshot only on clean shutdown, replay log otherwise
+  Pros: Fast restart in the common case.
+  Cons: Does nothing about unbounded growth; the SIGKILL restart test still
+  replays everything.
+
+  Recommendation: size-threshold snapshot using a copy of the dict written to a
+  temp file, fsync, atomic rename, then truncate the log past the snapshot's log
+  offset. Reason: it bounds both disk and recovery time, and the atomic rename
+  keeps recovery correct if the process dies mid-snapshot. Recovery is load
+  snapshot, then replay the log from the recorded offset. For the one-day
+  budget, implement the simplest form: snapshot in a thread while writes
+  continue to a new log segment. If time runs out, a documented threshold with
+  no automatic trigger is an acceptable v1 fallback as long as replay works.
+
+  One addition not in section 4. Log record format needs a checksum per record
+  so a torn write at the tail after a crash is detected and the tail is
+  truncated, rather than crashing replay or loading a partial value. CRC32 from
+  the standard library is enough.
+
+❯ Decisions:
+  1. Agree Apply after commit, The flusher fsyncs, then applies the batch to
+  the dict in log order, then wakes the waiters. and if fsync fails, do not
+  apply the change
+  2. Wire protocal:  HTTP/1.1, easier to debug with curl. Key goes in the URL
+  path as base64url; value is the raw request/response body (no base64). Get on
+  a missing key -> 404; empty value -> 200 with an empty body.
+  3. Client routing: stick to the simple implementation. Use client-side
+  hashing with md5 of the key, return WRONG_OWNER if a server receives a key it
+  does not have
+  4. storage, use sqlite with synchronous=FULL and WAL mode, this can guarentee
+  durability. For this option, research and see if there is overhead if set
+  PRAGMA fullfsync=ON
+  5. python run model: Single asyncio process, sqlite runs on the writer thread
+  6. Compaction: sqlite automatically does this
+     Point out what I missed or could be potential wrong
+
+⏺ Let me measure the SQLite question rather than guess: WAL mode,
+  synchronous=FULL, with and without fullfsync=ON, both per-row commits and
+  batched commits.
+
+  Ran 1 shell command (ctrl+o to expand)
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ In the spike folder, write another test to an aiohttp + SQLite (WAL,
+  synchronous=FULL,
+  fullfsync=ON, batched transactions) server and measure p99 at 1K ops/s
+  with N=1 and N=3. Write the result to readme and also give me the running
+  command
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ I'll create a venv inside spike/ to keep aiohttp isolated, then write the
+  server and client.
+
+⏺ Bash(cd /Users/Carl_Guo/Desktop/Distributed_kv_store/spike && python3 -m venv
+      .venv && .venv/bin/pip install -q aiohttp && .venv/bin/python -c "import
+      aiohttp; print…)
+  ⎿  Created .gitignore (+3 -0)
+      1 +spike/.venv/                                                    
+      2 +spike/data/                                                     
+      3 +__pycache__/                                                    
+
+⏺ Bash(cat > http_server.py <<'EOF'
+      """Spike: aiohttp + SQLite (WAL, synchronous=FULL, fullfsync=ON) with
+      batched commits.…)
+  ⎿  Created spike/http_client.py (+42 -0)
+       1 +"""Open-loop HTTP workload generator. Routes each key by md5 to
+         + its owning server.                                            
+       2 +usage: python http_client.py <port[,port,...]> <ops_per_sec> <s
+         +econds>                                                        
+       3 +"""                                                            
+       4 +import asyncio, base64, hashlib, os, random, sys, time         
+       5 +import aiohttp                                                 
+       6 +PORTS = [int(p) for p in sys.argv[1].split(",")]               
+       7 +RATE, SECS, CONNS = int(sys.argv[2]), int(sys.argv[3]), 32     
+       8 +lat = {"get": [], "put": [], "del": []}; status_errors = 0     
+       9 +random.seed(1); keys = [os.urandom(16).hex().encode() for _ in 
+         +range(100_000)]                                                
+      10 +urls = {k: f"http://127.0.0.1:{PORTS[int(hashlib.md5(k).hexdige
+         +st(), 16) % len(PORTS)]}/keys/"                                
+      11 +           + base64.urlsafe_b64encode(k).decode().rstrip("=") f
+         +or k in keys}                                                  
+      12 +val = os.urandom(1024)                                         
+      13 +async def worker(q, sess):                                     
+      14 +    global status_errors                                       
+      15 +    while True:                                                
+      16 +        item = await q.get()                                   
+      17 +        if item is None: break                                 
+      18 +        op, start = item                                       
+      19 +        key = keys[min(int(random.paretovariate(1.2)) % len(key
+         +s), len(keys)-1)]                                              
+      20 +        m = ("GET", "PUT", "DELETE")[op]                       
+      21 +        async with sess.request(m, urls[key], data=val if op ==
+         + 1 else None) as r:                                            
+      22 +            await r.read()                                     
+      23 +            if r.status not in (200, 404): status_errors += 1  
+      24 +        lat[("get","put","del")[op]].append((time.perf_counter(
+         +) - start) * 1000)                                             
+      25 +async def main():                                              
+      26 +    conn = aiohttp.TCPConnector(limit=0, limit_per_host=CONNS) 
+      27 +    async with aiohttp.ClientSession(connector=conn) as sess:  
+      28 +        q = asyncio.Queue(); ws = [asyncio.create_task(worker(q
+         +, sess)) for _ in range(CONNS)]                                
+      29 +        interval = 1 / RATE; t = time.perf_counter(); end = t +
+         + SECS                                                          
+      30 +        while t < end:                                         
+      31 +            r = random.random(); op = 0 if r < .8 else (1 if r 
+         +< .95 else 2)                                                  
+      32 +            q.put_nowait((op, time.perf_counter()))            
+      33 +            t += interval; d = t - time.perf_counter()         
+      34 +            if d > 0: await asyncio.sleep(d)                   
+      35 +        for _ in ws: q.put_nowait(None)                        
+      36 +        await asyncio.gather(*ws)                              
+      37 +    for k, v in lat.items():                                   
+      38 +        v.sort(); n = len(v)                                   
+      39 +        if n: print(f"{k:4s} n={n:6d} p50={v[n//2]:.2f} p99={v[
+         +int(n*.99)]:.2f} max={v[-1]:.2f} ms")                          
+      40 +    tot = sum(len(v) for v in lat.values())                    
+     … 2 more lines (ctrl+o to expand)
+  ⎿  Created spike/http_server.py (+85 -0)
+       1 +"""Spike: aiohttp + SQLite (WAL, synchronous=FULL, fullfsync=ON
+         +) with batched commits.                                        
+       2 +usage: python http_server.py <port> <db_path> <num_servers> <se
+         +rver_index>                                                    
+       3 +                                                               
+       4 +Routes: PUT/GET/DELETE /keys/{base64url key}. Value is the raw 
+         +body.                                                          
+       5 +Writes go to a single writer thread that drains a queue, commit
+         +s one transaction per                                          
+       6 +batch, and only then applies the batch to the in-memory dict an
+         +d wakes the waiters                                            
+       7 +(apply-after-commit). If the commit fails nothing is applied an
+         +d callers get 500.                                             
+       8 +"""                                                            
+       9 +import asyncio, base64, hashlib, queue, sqlite3, sys, threading
+      10 +from aiohttp import web                                        
+      11 +                                                               
+      12 +PORT, DB, N, IDX = int(sys.argv[1]), sys.argv[2], int(sys.argv[
+         +3]), int(sys.argv[4])                                          
+      13 +MAX_BATCH = 256                                                
+      14 +store = {}                      # key bytes -> value bytes, com
+         +mitted state only                                              
+      15 +wq = queue.Queue()              # (op, key, value, future, loop
+         +)                                                              
+      16 +                                                               
+      17 +def open_db():                                                 
+      18 +    c = sqlite3.connect(DB, isolation_level=None, check_same_th
+         +read=False)                                                    
+      19 +    c.execute("PRAGMA journal_mode=WAL"); c.execute("PRAGMA syn
+         +chronous=FULL")                                                
+      20 +    c.execute("PRAGMA fullfsync=ON"); c.execute("PRAGMA checkpo
+         +int_fullfsync=ON")                                             
+      21 +    c.execute("CREATE TABLE IF NOT EXISTS kv(k BLOB PRIMARY KEY
+         +, v BLOB NOT NULL) WITHOUT ROWID")                             
+      22 +    return c                                                   
+      23 +                                                               
+      24 +def writer():                                                  
+      25 +    c = open_db()                                              
+      26 +    while True:                                                
+      27 +        batch = [wq.get()]                                     
+      28 +        try:                                                   
+      29 +            while len(batch) < MAX_BATCH: batch.append(wq.get_n
+         +owait())                                                       
+      30 +        except queue.Empty: pass                               
+      31 +        try:                                                   
+      32 +            c.execute("BEGIN")                                 
+      33 +            for op, k, v, _, _ in batch:                       
+      34 +                if op == "put": c.execute("INSERT OR REPLACE IN
+         +TO kv VALUES(?,?)", (k, v))                                    
+      35 +                else: c.execute("DELETE FROM kv WHERE k=?", (k,
+         +))                                                             
+      36 +            c.execute("COMMIT")                                
+      37 +        except Exception as e:                       # fsync or
+         + SQL failure: apply nothing                                    
+      38 +            try: c.execute("ROLLBACK")                         
+      39 +            except Exception: pass                             
+      40 +            for *_, fut, loop in batch: loop.call_soon_threadsa
+         +fe(fut.set_exception, e)                                       
+     … 45 more lines (ctrl+o to expand)
+  ⎿  Created spike/run_http.sh (+15 -0)
+       1 +#!/usr/bin/env bash                                            
+       2 +# usage: ./run_http.sh <num_servers> <ops_per_sec> <seconds>   
+       3 +# Needs: python3 -m venv .venv && .venv/bin/pip install aiohttp
+       4 +set -u                                                         
+       5 +N=${1:-1}; RATE=${2:-1000}; SECS=${3:-20}                      
+       6 +cd "$(dirname "$0")"; PY=.venv/bin/python; mkdir -p data; rm -f
+         + data/http_*.db*; PIDS=(); PORTS=()                            
+       7 +for i in $(seq 0 $((N-1))); do                                 
+       8 +  port=$((7300 + i))                                           
+       9 +  $PY http_server.py "$port" "data/http_$i.db" "$N" "$i" & PIDS
+         ++=($!); PORTS+=("$port")                                       
+      10 +done                                                           
+      11 +sleep 1                                                        
+      12 +echo "== aiohttp+sqlite servers=$N rate=$RATE ops/s duration=${
+         +SECS}s =="                                                     
+      13 +$PY http_client.py "$(IFS=,; echo "${PORTS[*]}")" "$RATE" "$SEC
+         +S"                                                             
+      14 +for p in "${PIDS[@]}"; do ps -o %cpu= -p "$p" | awk -v p="$p" '
+         +{print "server pid " p " cpu%:", $1}'; done                    
+      15 +kill "${PIDS[@]}" 2>/dev/null; wait 2>/dev/null; rm -rf data   
+
+⏺ Smoke test passes for all the agreed semantics. Now the measured runs: N=1 and
+  N=3 at 1K ops/s, 30 s each.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Both configurations pass with margin. Updating the README with the SQLite
+  fullfsync numbers and the new results, and copying the SQLite micro-benchmark
+  into the spike folder.
+
+⏺ Bash(cp /private/tmp/claude-502/-Users-Carl-Guo-Desktop-Distributed-kv-store/5
+      4546b18-1374-46f9-80f9-a61fd8c938c2/scratchpad/sqlite_bench.py . &&
+      python3 - <<'EOF'
+      i…)
+  ⎿  Updated spike/README.md (+83 -4)
+      15  | `proto_server.py` | Throwaway asyncio TCP server: dict state,
+           append-only log, fsync per write or group commit |
+      16  | `proto_client.py` | Open-loop workload generator; hashes each
+           key to one server; reports p50/p99/max |
+      17  | `run.sh` | Starts N servers, runs the client, prints server C
+          PU, stops everything |
+      18 +| `sqlite_bench.py` | Commit cost of SQLite WAL + `synchronous=
+         +FULL` with `fullfsync` OFF vs ON, batched vs single-row |      
+      19 +| `http_server.py` | Second prototype: aiohttp + SQLite, batche
+         +d transactions on a writer thread, apply-after-commit |        
+      20 +| `http_client.py` | Open-loop HTTP workload generator, routes 
+         +keys by md5 to the owning server |                             
+      21 +| `run_http.sh` | Same as `run.sh` for the HTTP + SQLite protot
+         +ype (needs the venv below) |                                   
+      22  
+      23  The server and client are not v1 code. They exist only to measu
+          re.
+      24  
+     ...
+       87  7. **Restart recovery is untested here.** The spike never repl
+           ays the log. v1 must add replay
+       88     and a crash test as defined in requirement A8.
+       89  
+       90 +## Part 2: aiohttp + SQLite prototype                         
+       91 +                                                              
+       92 +Design decisions taken after part 1: HTTP/1.1 with the key as 
+          +base64url in the path and the                                 
+       93 +value as the raw body, SQLite in WAL mode with `synchronous=FU
+          +LL` and `fullfsync=ON`, a single                              
+       94 +asyncio process with SQLite on one writer thread, batched tran
+          +sactions, and apply-after-commit                              
+       95 +(the dict is updated only after `COMMIT` returns; a failed com
+          +mit applies nothing and returns                               
+       96 +500). Keys are routed client-side by `md5(key) % N`; a server 
+          +that receives a key it does not                               
+       97 +own answers 421 `WRONG_OWNER`.                                
+       98 +                                                              
+       99 +### Setup and run                                             
+      100 +                                                              
+      101 +```bash                                                       
+      102 +cd spike                                                      
+      103 +python3 -m venv .venv && .venv/bin/pip install aiohttp        
+      104 +python3 sqlite_bench.py                 # fullfsync overhead, 
+          +no venv needed                                                
+      105 +./run_http.sh 1 1000 30                 # servers, ops/s, seco
+          +nds                                                           
+      106 +./run_http.sh 3 1000 30                                       
+      107 +```                                                           
+      108 +                                                              
+      109 +Manual check with curl (key `job-1`, base64url `am9iLTE`):    
+      110 +                                                              
+      111 +```bash                                                       
+      112 +.venv/bin/python http_server.py 7399 smoke.db 1 0 &           
+      113 +curl -X PUT --data-binary 'running' http://127.0.0.1:7399/keys
+          +/am9iLTE   # 200                                              
+      114 +curl http://127.0.0.1:7399/keys/am9iLTE                       
+          +           # running, 200                                     
+      115 +curl -X PUT --data-binary ''        http://127.0.0.1:7399/keys
+          +/am9iLTE   # 200, empty value                                 
+      116 +curl -i http://127.0.0.1:7399/keys/am9iLTE                    
+          +           # 200, 0-byte body                                 
+     … 58 more lines (ctrl+o to expand)
+  ⎿  Created spike/sqlite_bench.py (+26 -0)
+       1 +import sqlite3, os, time, sys                                  
+       2 +print("sqlite", sqlite3.sqlite_version)                        
+       3 +val = os.urandom(1024)                                         
+       4 +def bench(fullfsync, batch, n=600):                            
+       5 +    for f in ("b.db","b.db-wal","b.db-shm"):                   
+       6 +        try: os.unlink(f)                                      
+       7 +        except FileNotFoundError: pass                         
+       8 +    c = sqlite3.connect("b.db", isolation_level=None)          
+       9 +    c.execute("PRAGMA journal_mode=WAL"); c.execute("PRAGMA syn
+         +chronous=FULL")                                                
+      10 +    c.execute(f"PRAGMA fullfsync={'ON' if fullfsync else 'OFF'}
+         +")                                                             
+      11 +    c.execute("PRAGMA checkpoint_fullfsync=ON" if fullfsync els
+         +e "PRAGMA checkpoint_fullfsync=OFF")                           
+      12 +    c.execute("CREATE TABLE kv(k BLOB PRIMARY KEY, v BLOB) WITH
+         +OUT ROWID")                                                    
+      13 +    lat = []                                                   
+      14 +    for i in range(n // batch):                                
+      15 +        t = time.perf_counter()                                
+      16 +        c.execute("BEGIN")                                     
+      17 +        for j in range(batch):                                 
+      18 +            c.execute("INSERT OR REPLACE INTO kv VALUES(?,?)", 
+         +(os.urandom(32), val))                                         
+      19 +        c.execute("COMMIT")                                    
+      20 +        lat.append((time.perf_counter() - t) * 1000)           
+      21 +    lat.sort(); m = len(lat)                                   
+      22 +    print(f"fullfsync={'ON ' if fullfsync else 'OFF'} batch={ba
+         +tch:3d}  commit p50={lat[m//2]:6.2f}ms p99={lat[int(m*.99)]:6.2
+         +f}ms max={lat[-1]:6.2f}ms  per-row={sum(lat)/n:.3f}ms")        
+      23 +    c.close()                                                  
+      24 +for ff in (False, True):                                       
+      25 +    for b in (1, 5, 20):                                       
+      26 +        bench(ff, b)                                           
+⏺ The aiohttp + SQLite prototype is in spike/, measured, and documented. Not
+  committed, per the earlier pattern of you verifying first.
+
+  Run commands
+
+  cd spike
+  python3 -m venv .venv && .venv/bin/pip install aiohttp   # one-time
+  python3 sqlite_bench.py          # fullfsync overhead micro-benchmark
+  ./run_http.sh 1 1000 30          # servers, ops/s, seconds
+  ./run_http.sh 3 1000 30
+
+  Results at 1K ops/s, 30 s, open-loop, 32 connections per server
+
+  ┌─────────┬─────────┬─────────┬─────────┬──────────────┬────────────────┐
+  │ Servers │ Get p99 │ Put p99 │ Del p99 │ Bad statuses │ CPU per server │
+  ├─────────┼─────────┼─────────┼─────────┼──────────────┼────────────────┤
+  │ 1       │ 0.85 ms │ 11.3 ms │ 11.0 ms │ 0            │ 20%            │
+  ├─────────┼─────────┼─────────┼─────────┼──────────────┼────────────────┤
+  │ 3       │ 0.81 ms │ 18.2 ms │ 17.3 ms │ 0            │ 1–12%          │
+  └─────────┴─────────┴─────────┴─────────┴──────────────┴────────────────┘
+
+  Both pass the 50 ms read and 100 ms write targets with large margin.
+
+  fullfsync=ON overhead (SQLite 3.53.2, WAL, synchronous=FULL)
+
+  ┌───────────┬─────────────────┬────────────┬──────────────┐
+  │ fullfsync │ rows per commit │ commit p50 │ per-row cost │
+  ├───────────┼─────────────────┼────────────┼──────────────┤
+  │ OFF       │ 1               │ 0.06 ms    │ 0.12 ms      │
+  ├───────────┼─────────────────┼────────────┼──────────────┤
+  │ ON        │ 1               │ 4.13 ms    │ 4.61 ms      │
+  ├───────────┼─────────────────┼────────────┼──────────────┤
+  │ ON        │ 20              │ 5.89 ms    │ 0.32 ms      │
+  └───────────┴─────────────────┴────────────┴──────────────┘
+
+  With fullfsync OFF, SQLite on macOS is not durable against power loss, the
+  same trap as os.fsync. ON costs one F_FULLFSYNC per commit, about 4 ms, and
+  batching amortizes it to 0.3 ms per row. The requirement must say fullfsync=ON
+  and checkpoint_fullfsync=ON explicitly.
+
+  What the prototype implements from your decisions
+  - HTTP/1.1 via aiohttp. Key as base64url in the path, raw body as value. 404
+    on missing, 200 with empty body for empty value. Verified with curl,
+    commands are in the README.
+  - Client-side md5 routing. Server returns 421 WRONG_OWNER for a key it does
+    not own.
+  - One writer thread drains a queue, one transaction per batch of up to 256
+    ops, applies to the dict only after COMMIT, and wakes waiters. A failed
+    commit rolls back, applies nothing, and returns 500.
+
+  Things still open from the earlier question you asked, which I will fold into
+  the design review:
+  - Restart replay in the prototype is only a full table load at startup. The
+    SIGKILL-mid-load test from requirement A8 has not been run yet.
+  - WAL checkpoints with checkpoint_fullfsync=ON pay their own full fsync. Their
+    effect on tail latency was not isolated. Default auto-checkpoint is every
+    1000 pages, roughly every 4 MB.
+  - Uneven CPU across the three servers in the N=3 run is the skewed key
+    distribution landing hot keys on one owner, not a bug.
+
+  Files added: http_server.py (spike/http_server.py), http_client.py
+  (spike/http_client.py), run_http.sh (spike/run_http.sh), sqlite_bench.py
+  (spike/sqlite_bench.py), and the README part 2 section. A root .gitignore now
+  excludes the venv and data directories.
+
+❯ <ide_opened_file>The user opened the file
+  /Users/Carl_Guo/Desktop/Distributed_kv_store/spike/http_server.py in the IDE.
+  This may or may not be related to the current task.</ide_opened_file>
+
+❯ result is good. we should use http and sqlite. Commit newly added change
+  included the takehome md
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+⏺ Committed as 1ffe620. The working tree is clean.
+
+  The commit includes the aiohttp + SQLite server, client, runner, the SQLite
+  benchmark, the README part 2 section, the root .gitignore, and
+  takehome_assignment_prompt.md. I also saved the confirmed design decisions to
+  memory so later sessions do not reopen the protocol or storage choice.
+
+  Next step is the design doc, which should also resolve the two items still
+  open from your earlier question: the SIGKILL restart test and the effect of
+  WAL checkpoints on tail latency.
+
+❯ Go back to the design decisions
+
+  Decisions:
+  1. Agree Apply after commit, The flusher fsyncs, then applies the batch to
+  the dict in log order, then wakes the waiters. and if fsync fails, do not
+  apply the change
+  2. Wire protocal:  HTTP/1.1, easier to debug with curl. Key goes in the URL
+  path as base64url; value is the raw request/response body (no base64). Get on
+  a missing key -> 404; empty value -> 200 with an empty body.
+  3. Client routing: stick to the simple implementation. Use client-side
+  hashing with md5 of the key, return WRONG_OWNER if a server receives a key it
+  does not have
+  4. storage, use sqlite with synchronous=FULL and WAL mode, this can guarentee
+  durability.
+  5. python run model: Single asyncio process, sqlite runs on the writer thread
+  6. Compaction: sqlite automatically does this
+     Point out what I missed or could be potential wrong
+
+⏺ Your six decisions hold up. Here is what is missing or risky, ordered by
+  severity.
+
+  Must fix
+
+  1. Decision 4 is not durable on macOS as written. synchronous=FULL in WAL mode
+     fsyncs the WAL on every commit, but on macOS fsync only reaches the drive
+     cache. The spike measured this: 0.06 ms commits with fullfsync=OFF. Add
+     PRAGMA fullfsync=ON and PRAGMA checkpoint_fullfsync=ON. Both are no-ops on
+     Linux, so the same code is correct on both.
+  2. Decision 1 should be fail-stop, not fail-continue. After a failed COMMIT
+     the OS page cache may hold data that never reached disk, and SQLite's own
+     state after an I/O error is only trustworthy after reopening. Returning 500
+     for the batch is right, but then exit the process. A restart reloads from
+     the last durable commit, which is the state you want. Continuing risks a
+     later batch committing on top of an uncertain tail.
+  3. The in-memory dict is a cache, so it must be loaded only from committed
+     state. Startup loads all rows, then the writer applies deltas after each
+     COMMIT. Nothing else may write the dict. Worth stating as an invariant in
+     the design doc: memory equals the committed prefix of the database at all
+     times.
+
+  Likely to bite
+
+  4. Auto-checkpoint runs inside a COMMIT on the writer thread. When the WAL
+     exceeds 1000 pages SQLite checkpoints synchronously during that commit,
+     with its own full fsync of the main db file. That is a periodic latency
+     spike on whichever batch triggers it. At 200 writes/s of 1 KiB it fires
+     about every 20 s. The spike's 30 s runs probably included one, and p99
+     still passed, but the design should either measure it explicitly or run
+     PRAGMA wal_checkpoint(PASSIVE) from a timer when the queue is idle.
+  5. Checkpoint starvation. A connection holding an open read transaction blocks
+     checkpoints and the WAL grows without bound. Since reads come from the
+     dict there should be no reader connection at all after startup. Close the
+     loading connection, and never open a second connection on the event loop.
+  6. No backpressure on the write queue. If the disk stalls, the queue grows
+     without bound and every waiting request eventually times out together.
+     Bound the queue, around 10K, and return 503 when it is full.
+  7. "SQLite compacts automatically" is half true. It reuses freed pages, so the
+     file does not grow from overwrite churn, but it never shrinks after
+     deletes without VACUUM. Fine for this workload, but say so rather than
+     claim compaction.
+  8. The WAL and SHM files are part of the database. Start/stop scripts and the
+     restart test must never delete kv.db-wal or kv.db-shm; deleting the WAL
+     loses committed data.
+
+  Decision 2 details to pin down
+
+  - Status codes beyond what you listed: 400 for a key that fails base64url
+    decoding, is empty, or exceeds 256 bytes after decoding. 413 for a value
+    over 64 KiB, which needs aiohttp's client_max_size set, since its default is
+    1 MiB. 421 for WRONG_OWNER, with the correct owner index in the body for
+    debugging. 503 for queue full, 500 for commit failure.
+  - PUT returns 200 both for create and replace. No 201, since the client cannot
+    tell and does not need to.
+  - GET returns Content-Type: application/octet-stream.
+  - Add GET /health so start scripts can wait for readiness before load, and so
+    the workload generator does not count startup time as latency.
+  - Keep-alive is mandatory for p99. The client library must use a connection
+    pool. A fresh TCP connection per request would roughly double read latency.
+
+  Decision 3 details
+
+  - Client and servers must agree on N, the hash, and the index order. Put the
+    server list in one config file that both sides read, and have the server
+    take its index from that file rather than from a separate flag, so the two
+    cannot drift.
+  - md5(key) % N with the skewed key distribution puts hot keys on one server.
+    The N=3 spike showed one server at 12% CPU and another at 0.7%. Not a
+    correctness issue, but say it is expected.
+
+  Decision 5 details
+
+  - Memory: 1M keys at 1 KiB in Python dict is about 1.2 GB per server with
+    object overhead. Fits the RAM assumption but should be written down.
+  - Startup load time: a full table scan into the dict is a few seconds at 1M
+    rows. The health endpoint should return not-ready until the load finishes.
+  - Graceful shutdown on SIGTERM: stop accepting, drain the queue, commit, exit.
+    Not needed for correctness since WAL recovery handles SIGKILL, but it makes
+    the stop script clean.
+
+  Missing topics
+
+  - The SIGKILL restart test from requirement A8 is still unrun. SQLite WAL
+    recovery should handle it, but the verification is the point of the
+    requirement.
+  - Server-side latency logging from requirement A4 is not in any decision yet.
+  - The workload generator needs to handle 421 as a configuration error, not a
+    retry, and its consistency checker needs the per-key last-acked-value
+    tracking.
+  - Config file format, port assignment, data directory layout, and pid files
+    for the stop script.
+
+  Nothing here reverses a decision. Items 1 and 2 change the durability story
+  and should go into the requirement doc as well as the design.
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ Accept:
+  1. fullfsync=ON and checkpoint_fullfsync=ON
+  2. fail-stop — on commit failure, fail the batch and exit.
+  3. status code you suggested
+  4. in-memory dict should be loaded from the commited state
+     Other is out of scope for v1
+
+  Now write docs/design.md including
+  1. architecture diagram
+  2. Put/Get sequence diagrams
+  3. API and config
+  4. recovery
+  5. test strategy
+     Update @docs/requirement.md  to match.
+  ⎿  Read docs/requirement.md (unchanged)
+
+⏺ Writing docs/design.md and updating the requirement doc to match the accepted
+  decisions.
+
+⏺ Bash(cat > docs/design.md <<'EOF'
+      # Design: Distributed Key-Value Store (v1)…)
+  ⎿  Created docs/design.md (+229 -0)
+        1 +# Design: Distributed Key-Value Store (v1)                    
+        2 +                                                              
+        3 +Scope and constraints: [requirement.md](requirement.md). Measu
+          +rements behind the choices:                                   
+        4 +[../spike/README.md](../spike/README.md).                     
+        5 +                                                              
+        6 +## 1. Overview                                                
+        7 +                                                              
+        8 +v1 is N independent storage servers (N = 1..4), each owning a 
+          +disjoint slice of the key space.                              
+        9 +There is no replication. A client library hashes each key to i
+          +ts owner and talks to that server                             
+       10 +over HTTP/1.1. Each server is one asyncio process with a SQLit
+          +e database on disk and a full                                 
+       11 +in-memory copy of the committed state for reads. Writes are ba
+          +tched into one SQLite                                         
+       12 +transaction per batch on a single writer thread; a request is 
+          +acknowledged only after that                                  
+       13 +transaction has committed with a full fsync.                  
+       14 +                                                              
+       15 +| Decision | Choice | Reason |                                
+       16 +|----------|--------|--------|                                
+       17 +| Language / runtime | Python 3, one asyncio process per serve
+          +r | Measured 14–20% CPU at 1K ops/s; single-threaded apply giv
+          +es per-key ordering without locks |                           
+       18 +| Wire protocol | HTTP/1.1 via aiohttp, key as base64url in th
+          +e path, raw body as value | curl-debuggable; measured p99 equa
+          +l to raw TCP |                                                
+       19 +| Routing | Client-side `md5(key) % N` over a static server li
+          +st | One hop; no router process |                             
+       20 +| Storage | SQLite, WAL, `synchronous=FULL`, `fullfsync=ON`, `
+          +checkpoint_fullfsync=ON` | Durability, crash recovery and spac
+          +e reuse come from SQLite; fullfsync is required on macOS |    
+       21 +| Durability | One transaction per batch (group commit); ack a
+          +fter COMMIT | Per-write fullfsync costs ~4 ms; batching brings
+          + it to ~0.3 ms per write |                                    
+       22 +| Visibility | Apply to the in-memory dict only after COMMIT (
+          +apply-after-commit) | No client can read a value that could va
+          +nish on restart |                                             
+       23 +| Failure policy | On COMMIT failure: fail the batch with 500,
+          + exit the process | Disk state after an fsync error is uncerta
+          +in; restart reloads the committed state |                     
+       24 +                                                              
+       25 +## 2. Architecture                                            
+       26 +                                                              
+       27 +```mermaid                                                    
+       28 +flowchart LR                                                  
+       29 +    subgraph Clients                                          
+       30 +        WG[Workload generator]                                
+       31 +        CLI[curl / CLI]                                       
+       32 +    end                                                       
+       33 +    subgraph Lib[Client library]                              
+       34 +        H["owner = md5(key) % N"]                             
+       35 +        POOL[HTTP keep-alive pool]                            
+       36 +    end                                                       
+       37 +    WG --> H --> POOL                                         
+       38 +    CLI -. direct HTTP .-> S0                                 
+       39 +                                                              
+       40 +    subgraph S0[Server 0 : one asyncio process]               
+     … 189 more lines (ctrl+o to expand)
+  ⎿  Updated docs/requirement.md (+17 -11)
+      10  |----------|--------|
+      11  | Target | All mandatory requirements: Put/Get/Delete, per-key 
+          linearizability, restart recovery, latency goals at 1K ops/s |
+      12  | Optional requirements (durability across server loss, availab
+          ility on failure, partition handling) | Not in v1. Design must 
+          not preclude adding replication later |
+      13 -| Language | Python. Design phase must check that Python can hi
+         -t the p99 targets at 1K ops/s with fsync'd writes |            
+      13 +| Language | Python. Spike confirmed p99 targets at 1K ops/s wi
+         +th fsync'd writes ([spike/README.md](../spike/README.md)) |    
+      14  | Replication / consensus | None in v1. Raft or alternatives de
+          ferred |
+      15  | Dataset size | Assumed to fit in RAM |
+      16  | Time budget | One day |
+     ...
+      42  |----------|-------------|----|
+      43  | Consistency | Per-key linearizability: a completed Put/Delete
+           is visible to every later Get; concurrent ops on a key seriali
+          ze in some single order; no cross-key ordering | must |
+      44  | Restart recovery | A process restart (clean or crash) must no
+          t lose acknowledged writes; data persisted to disk | must |
+      45 -| Durability on ack | Every Put/Delete is fsync'd to disk befor
+         -e the client receives success. No weaker mode | must |         
+      45 +| Durability on ack | Every Put/Delete is committed to disk wit
+         +h a full fsync (`fullfsync=ON` on macOS) before the client rece
+         +ives success. No weaker mode | must |                          
+      46 +| Visibility | A Get never returns a value that is not yet dura
+         +ble (apply-after-commit) | must |                              
+      47 +| Failure policy | If a commit fails, the batch is rejected wit
+         +h an error, nothing is applied, and the server exits | must |  
+      48  | Performance | 1,000 ops/s sustained, 80% reads / 20% writes+d
+          eletes; p99 read < 50 ms, p99 write < 100 ms, healthy system | 
+          must |
+      49  | Workload | key ~32 B avg (max 256 B), value ~1 KiB avg (max 6
+          4 KiB) | sizing input |
+      50  | Capacity | Dataset fits in RAM (assumption); persistence stil
+          l required | constraint |
+     ...
+      74  | group commit: batch writes, one fsync per batch | survives po
+          wer loss | amortized; adds a few ms of queueing |
+      75  | write without fsync | survives process crash only, not power 
+          loss | lowest |
+      76  
+      75 -Decision: **always fsync before ack. No fallback to unsynced wr
+         -ites.** Start with fsync per write; switch to group commit if p
+         -er-write fsync does not meet the write p99 in Python.          
+      77 +Decision: **always fsync before ack. No fallback to unsynced wr
+         +ites.** Group commit via one SQLite transaction per batch, `syn
+         +chronous=FULL`, `fullfsync=ON`, `checkpoint_fullfsync=ON`. Spik
+         +e measured per-write fsync at put p99 56 ms and group commit at
+         + 11 ms, so group commit is the design.                         
+      78  
+      79  ### A3. Dataset size and key cardinality
+      80  Resolved by assumption: fits in RAM. Estimate: 200 writes/s × 1
+           KiB is ~17 GB/day only if every write is a new key; the realis
+          tic key set (job status, config) is bounded. Assume ≤ 1M live k
+          eys.
+     ...
+      103  Why it matters: "recover after a process restart" needs a repr
+           oducible check.
+      104  Decision: write a known set of keys, kill the server with SIGK
+           ILL mid-load, restart, verify every acked write is readable an
+           d every acked delete returns `NotFound`.
+      105  
+      104 -## 4. Deferred design topics                                  
+      106 +## 4. Design topics                                           
+      107  
+      106 -To be decided in the design doc; not requirements.            
+      108 +Resolved in [design.md](design.md):                           
+      109  
+      108 -- Wire protocol and request/response format (HTTP/JSON, gRPC, 
+          -custom framing).                                              
+      109 -- Client routing to the owning server (client-side hashing vs 
+          -server forwarding).                                           
+      110 -- Storage layout: in-memory dict + append-only log + snapshots
+          - vs embedded store (SQLite, LMDB).                            
+      111 -- Python runtime model: asyncio vs threads vs multiprocess; ve
+          -rify fsync'd writes meet p99 at 1K ops/s.                     
+      112 -- Log compaction / snapshot trigger.                          
+     … 14 more lines (ctrl+o to expand)
+
+⏺ Both documents are written. Not committed, pending your review.
+
+  docs/design.md contains:
+
+  1. Overview table of the seven decisions with the reason for each, including
+     fullfsync, apply-after-commit, and fail-stop.
+  2. Architecture diagram (Mermaid) showing client library with md5 routing and
+     keep-alive pool, and per server the aiohttp handlers, write queue, writer
+     thread, committed-state dict, and SQLite files.
+  3. Put and Get sequence diagrams, with the commit-failure branch on Put and
+     the point that Get never touches SQLite or the writer.
+  4. API table with the agreed status codes: 200, 404, 400, 413, 421 with owner
+     index, 500.
+  5. Configuration: a single cluster.json shared by servers and clients so N and
+     ordering cannot drift, the SQLite pragmas, and what the start/stop scripts
+     do and must never delete.
+  6. Startup and recovery: load order (open and WAL replay, dict load, writer
+     thread, then listen) and a table of what survives SIGTERM, SIGKILL, power
+     loss, commit error, and disk loss.
+  7. Test strategy table: unit, integration, consistency checker, the A8 SIGKILL
+     restart test, performance against the spike baseline, and a startup
+     assertion that fullfsync really is on.
+  8. Out of scope list for v1.
+
+  docs/requirement.md changes:
+  - Language row now cites the spike instead of asking for the check.
+  - Two new must-level rows: visibility (apply-after-commit) and failure policy
+    (fail-stop).
+  - Durability row and A2 decision name the pragmas and the group-commit choice
+    with the measured numbers.
+  - Section 4 is now a resolved-decisions table pointing to the design doc, with
+    the remaining deferred items listed.
+
+  One judgment call to flag: since the health endpoint is out of scope,
+  readiness is defined as "the port accepts connections", and the server opens
+  its port only after the dict is fully loaded. The start script waits on the
+  port.
+
+❯ <ide_opened_file>The user opened the file
+  /Users/Carl_Guo/Desktop/Distributed_kv_store/docs/design.md in the IDE. This
+  may or may not be related to the current task.</ide_opened_file>
+
+❯ Design overall is good. Fix these items
+  1. Remove the items I mark as out of scope, e.g. Zipfian keys (we should use
+  uniform keys, and keep 80/15/5 and use a open loop), consistency checker and
+  graceful drain on SIGTERM. No needt o log server-side handler latency. Update
+  the A4 and A5 accordingly @docs/requirement.md
+  2. Add another section state the linearization part, including what happended
+  for put/delete for the same key; and a get issued after a 200 put (it should
+  see the latest write), an acked write after restart; concurrent Put/Delete
+  on the same key: applied in log order, no application-level locks; reads
+  never go backwards: if a writer commits 1 and a reader sees 1, every later
+  reader also sees 1 (or a later write);
+  3. the put request flow in section 3 has some issues as below, there is no
+  diagram showing, check the grammar issue
+     Error: Parse error on line 15:
+     ...NSERT OR REPLACE ...; COMMIT (WAL fsync
+     -----------------------^
+     Expecting '()', 'SOLID_OPEN_ARROW', 'DOTTED_OPEN_ARROW', 'SOLID_ARROW',
+  'SOLID_ARROW_TOP'
+  ⎿  Read docs/requirement.md (128 lines)
+
+⏺ The Mermaid error is the semicolons in the SQL message text; Mermaid treats ;
+  as a statement terminator. Fixing that plus the scope removals and the new
+  linearizability section.
+
+⏺ Bash(python3 - <<'EOF'
+      p = "docs/design.md"; s = open(p).read()…)
+  ⎿  Updated docs/design.md (+35 -14)
+       94      A->>Q: enqueue (put, key, value, future)
+       95      A-->>A: await future
+       96      W->>Q: drain up to 256 records
+       97 -    W->>DB: BEGIN; INSERT OR REPLACE ...; COMMIT (WAL fsync vi
+          -a F_FULLFSYNC)                                                
+       97 +    W->>DB: BEGIN, INSERT OR REPLACE x batch, COMMIT with F_FU
+          +LLFSYNC of the WAL                                            
+       98      alt COMMIT ok
+       99          W->>M: apply batch in queue order
+      100          W->>A: resolve futures
+     ...
+      122      A->>A: decode key, check length, check owner
+      123      A->>M: dict.get(key)
+      124      alt present
+      125 -        A->>C: 200, body = value (may be empty)               
+      125 +        A->>C: 200 with body = value, empty body allowed      
+      126      else absent
+      127          A->>C: 404 NotFound
+      128      end
+     ...
+      131  A Get never touches SQLite or the writer thread. A write that 
+           is in the queue or in an
+      132  uncommitted transaction is invisible to it, which is what make
+           s apply-after-commit safe.
+      133  
+      134 -## 4. API                                                     
+      134 +## 4. Per-key linearizability                                 
+      135 +                                                              
+      136 +The guarantee: for each key, all Put, Delete and Get operation
+          +s behave as if executed one at a                              
+      137 +time in a single order that respects real time. If an operatio
+          +n completes before another                                    
+      138 +starts, it comes first in that order. The mechanisms are the s
+          +ingle writer thread, the FIFO                                 
+      139 +write queue, and apply-after-commit. No application-level lock
+          +s are used.                                                   
+      140 +                                                              
+      141 +| Scenario | What happens | Why it holds |                    
+      142 +|----------|--------------|--------------|                    
+      143 +| Put then Get, same client, Get sent after the 200 | Get retu
+          +rns the value written or a later one | The 200 is sent only af
+          +ter the writer applied the value to the dict, which happens af
+          +ter COMMIT. Any Get that starts later reads the dict and sees 
+          +it |                                                          
+      144 +| Delete then Get, Get sent after the 200 | Get returns 404 un
+          +less a later Put recreated the key | Same path: the key is rem
+          +oved from the dict before the 200 is sent |                   
+      145 +| Concurrent Put and Put on one key | Both get 200; the final 
+          +value is the one that entered the queue later | Records are dr
+          +ained in FIFO order into one transaction and applied to the di
+          +ct in that order; the last SQL statement for a key and the las
+          +t dict assignment agree |                                     
+      146 +| Concurrent Put and Delete on one key | Both get 200; the out
+          +come is whichever entered the queue later | Same as above. Del
+          +ete is a normal record in the batch, not a special case |     
+      147 +| Get concurrent with an in-flight Put | Get returns either th
+          +e old value or the new one, never a torn or uncommitted value 
+          +| The dict holds only committed values. Before apply the Get s
+          +ees the old value; after apply it sees the new one. Either res
+          +ult is a valid linearization because the operations overlap | 
+      148 +| Reads never go backwards | If any reader sees value v for a 
+          +key, every later reader sees v or a later write | The dict is 
+          +mutated only by the writer in queue order, and nothing ever ro
+          +lls the dict back. A value that is visible has already been co
+          +mmitted and cannot be undone by a crash |                     
+      149 +| Acked write, then restart | After the server restarts the Ge
+          +t returns the acked value, or a later acked write | The 200 re
+          +quired COMMIT to return with the WAL flushed by F_FULLFSYNC. S
+          +tartup replays the WAL and loads the dict from the committed t
+          +able. Writes that were queued but not committed are lost, and 
+          +no client ever received a 200 for them |                      
+      150 +| Batch fails to commit | Every request in the batch gets 500,
+          + no value in it becomes visible, the server exits | Apply happ
+          +ens only on the success path. Exiting prevents a later batch f
+          +rom committing on top of uncertain disk state |               
+      151 +                                                              
+      152 +Cross-key ordering is not guaranteed and not needed: two keys 
+          +may live on different servers and                             
+      153 +their writes commit independently.                            
+     … 60 more lines (ctrl+o to expand)
+  ⎿  Updated docs/requirement.md (+3 -4)
+      81  
+      82  ### A4. Latency measurement point
+      83  Why it matters: "service boundary" could mean the server handle
+          r or client-observed.
+      84 -Decision: headline number is client-observed from the workload 
+         -generator on the same machine; also log server-side handler lat
+         -ency.                                                          
+      84 +Decision: latency is measured client-side by the workload gener
+         +ator on the same machine. No server-side latency logging in v1.
+      85  
+      86  ### A5. Workload generator
+      87  
+      88  | Choice | Options | Decision |
+      89  |--------|---------|----------|
+      90  | Load model | closed-loop (fixed concurrency) vs open-loop (fi
+          xed arrival rate) | open-loop at 1,000 ops/s |
+      91 -| Key distribution | uniform vs Zipfian | Zipfian over ~100K ke
+         -ys, uniform as an option |                                     
+      91 +| Key distribution | uniform vs Zipfian | uniform over ~100K ke
+         +ys |                                                           
+      92  | Operation mix | fixed 80/20 | 80% Get, 15% Put, 5% Delete |
+      93 -| Verification | none vs per-key last-write check | per-key che
+         -cker: track acked writes, flag stale reads |                   
+      93  | Reporting | mean vs histogram | p50/p95/p99/p999 via histogra
+          m, printed and saved |
+      94  
+      95  ### A6. Retries and idempotency
+     ...
+      115  | Visibility | in-memory dict loaded from committed state at s
+           tartup, updated only after COMMIT |
+      116  | Failure policy | commit failure: 500 for the batch, process 
+           exits |
+      117  
+      119 -Deferred beyond v1: replication and consensus (Raft or alterna
+          -tive), linearizable replicated reads, failure detection, repla
+          -cing a lost server, write-queue backpressure, health endpoint.
+      118 +Deferred beyond v1: replication and consensus (Raft or alterna
+          +tive), linearizable replicated reads, failure detection, repla
+          +cing a lost server, write-queue backpressure, health endpoint,
+          + consistency checker in the workload generator, graceful drain
+          + on SIGTERM.                                                  
+      119  
+      120  ## 5. Assumptions, no answer needed
+      121  
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Good news—the semicolon was the actual issue, not the parentheses. I'll still
+  strip the remaining parentheses from the Put and Get diagrams as a precaution
+  since I can't locally render Mermaid to verify. · summary
+
+⏺ Bash(sed -i '' \
+       -e 's/participant A as aiohttp handler (loop)/participant A as aiohttp
+      handler on event loop/' \…)
+  ⎿  Updated docs/design.md (+3 -3)
+      82  ```mermaid
+      83  sequenceDiagram
+      84      participant C as Client lib
+      85 -    participant A as aiohttp handler (loop)                    
+      85 +    participant A as aiohttp handler on event loop             
+      86      participant Q as write queue
+      87      participant W as writer thread
+      88      participant DB as SQLite
+     ...
+      91      C->>C: owner = md5(key) % N
+      92      C->>A: PUT /keys/{b64url} body=value
+      93      A->>A: decode key, check length, check owner
+      94 -    A->>Q: enqueue (put, key, value, future)                   
+      94 +    A->>Q: enqueue record put, key, value, future              
+      95      A-->>A: await future
+      96      W->>Q: drain up to 256 records
+      97      W->>DB: BEGIN, INSERT OR REPLACE x batch, COMMIT with F_FUL
+          LFSYNC of the WAL
+     ...
+      114  ```mermaid
+      115  sequenceDiagram
+      116      participant C as Client lib
+      117 -    participant A as aiohttp handler (loop)                   
+      117 +    participant A as aiohttp handler on event loop            
+      118      participant M as dict
+      119  
+      120      C->>C: owner = md5(key) % N
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Line 30 is prose outside the diagram. Line 12 is md5(key), which is valid
+  Mermaid message text, but I'll make it plain anyway so nothing in either
+  diagram depends on parser tolerance.
+
+⏺ Bash(sed -i '' 's/C->>C: owner = md5(key) % N/C->>C: owner = md5 of key mod
+      N/g' docs/design.md && grep -c 'md5 of key mod N' docs/design.md && git
+      status --short)
+  ⎿  Updated docs/design.md (+2 -2)
+      88      participant DB as SQLite
+      89      participant M as dict
+      90  
+      91 -    C->>C: owner = md5(key) % N                                
+      91 +    C->>C: owner = md5 of key mod N                            
+      92      C->>A: PUT /keys/{b64url} body=value
+      93      A->>A: decode key, check length, check owner
+      94      A->>Q: enqueue record put, key, value, future
+     ...
+      117      participant A as aiohttp handler on event loop
+      118      participant M as dict
+      119  
+      120 -    C->>C: owner = md5(key) % N                               
+      120 +    C->>C: owner = md5 of key mod N                           
+      121      C->>A: GET /keys/{b64url}
+      122      A->>A: decode key, check length, check owner
+      123      A->>M: dict.get(key)
+
+⏺ All three fixes are applied. Not committed, pending your review.
+
+  1. Scope removals in design.md (docs/design.md) and requirement.md
+  (docs/requirement.md):
+  - Workload generator now uses uniform keys over 100K, keeps 80/15/5 and
+    open-loop. The consistency checker row is removed from the test strategy and
+    from A5.
+  - Server-side latency logging is removed from the test strategy and from A4.
+    Latency is client-measured only.
+  - Graceful drain on SIGTERM is removed. The recovery table now treats SIGTERM
+    like a crash: acked writes kept, in-flight writes lost, WAL recovery on
+    open.
+  - The out-of-scope lists in both docs name these items explicitly.
+
+  2. New section 4, "Per-key linearizability" in the design doc. It states the
+  guarantee and the three mechanisms (single writer thread, FIFO queue,
+  apply-after-commit, no application-level locks), then a table of scenarios
+  with what happens and why it holds:
+  - Put then Get after the 200, and Delete then Get after the 200.
+  - Concurrent Put/Put and Put/Delete on one key: both acked, last in queue
+    order wins, Delete is an ordinary record.
+  - Get concurrent with an in-flight Put: old or new value, never uncommitted.
+  - Reads never go backwards: the dict is mutated only by the writer in queue
+    order and is never rolled back.
+  - Acked write then restart: WAL replay plus committed-table load.
+  - Batch commit failure: 500 for all, nothing visible, process exits.
+
+  Later sections are renumbered 5 through 9.
+
+  3. Mermaid parse error. The cause was the semicolons in the SQL text of the
+  Put diagram; Mermaid reads ; as a statement terminator. That line now reads
+  "BEGIN, INSERT OR REPLACE x batch, COMMIT with F_FULLFSYNC of the WAL". I also
+  removed every parenthesis from message and participant text in both sequence
+  diagrams so nothing relies on parser tolerance. I could not render Mermaid
+  locally, so please confirm the diagram shows in your preview.
+
+❯ <ide_selection>The user selected the lines 1 to 251 from
+  /Users/Carl_Guo/Desktop/Distributed_kv_store/docs/design.md:
+  # Design: Distributed Key-Value Store (v1)
+
+  Scope and constraints: [requirement.md](requirement.md). Measurements behind
+  the choices:
+  [../spike/README.md](../spike/README.md).
+
+  ## 1. Overview
+
+  v1 is N independent storage servers (N = 1..4), each owning a disjoint slice
+  of the key space.
+  There is no replication. A client library hashes each key to its owner and
+  talks to that server
+  over HTTP/1.1. Each server is one asyncio process with a SQLite database on
+  disk and a full
+  in-memory copy of the committed state for reads. Writes are batched into one
+  SQLite
+  transaction per batch on a single writer thread; a request is acknowledged
+  only after that
+  transaction has committed with a full fsync.
+
+  | Decision | Choice | Reason |
+  |----------|--------|--------|
+  | Language / runtime | Python 3, one asyncio process per server | Measured
+  14–20% CPU at 1K ops/s; single-threaded apply gives per-key ordering without
+  locks |
+  | Wire protocol | HTTP/1.1 via aiohttp, key as base64url in the path, raw
+  body as value | curl-debuggable; measured p99 equal to raw TCP |
+  | Routing | Client-side `md5(key) % N` over a static server list | One hop;
+  no router process |
+  | Storage | SQLite, WAL, `synchronous=FULL`, `fullfsync=ON`,
+  `checkpoint_fullfsync=ON` | Durability, crash recovery and space reuse come
+  from SQLite; fullfsync is required on macOS |
+  | Durability | One transaction per batch (group commit); ack after COMMIT |
+  Per-write fullfsync costs ~4 ms; batching brings it to ~0.3 ms per write |
+  | Visibility | Apply to the in-memory dict only after COMMIT
+  (apply-after-commit) | No client can read a value that could vanish on
+  restart |
+  | Failure policy | On COMMIT failure: fail the batch with 500, exit the
+  process | Disk state after an fsync error is uncertain; restart reloads the
+  committed state |
+
+  ## 2. Architecture
+
+  ```mermaid
+  flowchart LR
+      subgraph Clients
+          WG[Workload generator]
+          CLI[curl / CLI]
+      end
+      subgraph Lib[Client library]
+          H["owner = md5(key) % N"]
+          POOL[HTTP keep-alive pool]
+      end
+      WG --> H --> POOL
+      CLI -. direct HTTP .-> S0
+
+      subgraph S0[Server 0 : one asyncio process]
+          direction TB
+          A0[aiohttp handlers] -->|GET| D0[(in-memory dict<br/>committed
+  state)]
+          A0 -->|PUT / DELETE| Q0[write queue]
+          Q0 --> W0[writer thread<br/>batch -> BEGIN..COMMIT]
+          W0 -->|after COMMIT| D0
+          W
+  ──── (174 lines hidden) ─────────────────────────────────────────────────────
+  e as a crash; clients saw a timeout, never a 200 | WAL recovery on open |
+  | SIGKILL / crash | kept | lost; clients saw a timeout, never a 200 | WAL
+  recovery on open |
+  | Power loss | kept | lost | `synchronous=FULL` + `fullfsync=ON` flush the
+  WAL to the medium before COMMIT returns |
+  | COMMIT error at runtime | kept up to the last good commit | batch gets 500
+  | fail-stop, then restart reloads committed state |
+  | Loss of the server's disk | lost | lost | out of scope for v1 (no
+  replication) |
+
+  Checkpointing: SQLite auto-checkpoints when the WAL passes 1000 pages, inside
+  a COMMIT on the
+  writer thread. With `checkpoint_fullfsync=ON` that commit pays an extra full
+  fsync. Since no
+  connection holds a read transaction after startup, checkpoints always
+  complete and the WAL
+  stays bounded.
+
+  ## 8. Test strategy
+
+  | Level | What | How |
+  |-------|------|-----|
+  | Unit | key decoding, length limits, owner check, status codes, empty value
+  vs absent | pytest against the aiohttp app with `aiohttp.test_utils` |
+  | Unit | writer thread: batch applied to dict only after COMMIT, nothing
+  applied and process exits on a forced COMMIT failure | inject a failing
+  SQLite connection |
+  | Integration | three servers from `cluster.json`, client library routes
+  Put/Get/Delete, 421 on misrouted key | start via `scripts/start.sh`, drive
+  with the client library |
+  | Restart (A8) | acked writes survive SIGKILL mid-load | run the generator,
+  SIGKILL one server during writes, restart it, verify every acked Put is
+  readable and every acked Delete returns 404; `-wal` and `-shm` files are left
+  in place |
+  | Performance | 1K ops/s, 80/15/5, p99 read < 50 ms and write < 100 ms |
+  open-loop generator at 1,000 ops/s for 60 s against N=1 and N=3; report
+  p50/p95/p99/p999 measured client-side; spike baseline: put p99 11 ms (N=1),
+  18 ms (N=3) |
+  | Durability pragma | `fullfsync` really on | startup asserts `PRAGMA
+  fullfsync` returns 1 and `PRAGMA synchronous` returns 2 |
+
+  Workload generator (`kvbench`): open-loop at a fixed arrival rate, 32
+  keep-alive connections
+  per server, uniform keys over 100K, 80% Get / 15% Put / 5% Delete, 1 KiB
+  values, histogram
+  report printed and saved as CSV.
+
+  ## 9. Out of scope for v1
+
+  Replication and consensus, failover, partition handling, write-queue
+  backpressure, health
+  endpoint, graceful drain on SIGTERM, consistency checker in the workload
+  generator, server-side
+  latency logging, VACUUM, metrics endpoint, TLS, auth.
+
+
+  This may or may not be related to the current task.</ide_selection>
+
+❯ Design approved. Commit the current change
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Committed as 2dd16d3. The working tree is clean.
+
+  The commit holds the approved design.md (docs/design.md) and the matching
+  updates to requirement.md (docs/requirement.md). Next step is implementation:
+  the server, client library, workload generator, start/stop scripts, and the
+  tests from section 8 of the design, plus saving the coding-agent prompts as a
+  deliverable.
+
+❯ Now work on an implementation of v1 from @docs/design.md  and
+  @docs/requirement.md , it should be self-contained
+
+  For the implementation plan
+  1. Do not change the @docs/design.md  and @docs/requirement.md
+  2. build milestone in order, each should be small module to be done and
+  finished, for example, stoarge, HTTP server, client lib, script, workload
+  generator
+  3. For each milestone, use a test first development (TDD).
+  4. For final test, use the workload generator with n=1 and n=3 to run 1k
+  ops/s and meet the p99 target, save the result in readme
+
+  Now write the implementation plan in doc  ⎿  Read docs/design.md (251 lines)
+  ⎿  Read docs/requirement.md (127 lines)
+
+⏺ The writing-plans skill applies here, so I'll load it before drafting the
+  plan.
+
+⏺ Skill(superpowers:writing-plans)
+  ⎿  Successfully loaded skill
+
+⏺ I'm using the writing-plans skill to create the implementation plan. I'll
+  write it to docs/plans/2026-10-25-kv-v1-implementation.md, leaving design.md
+  and requirement.md untouched.
+
+⏺ Write(docs/plans/2026-10-25-kv-v1-implementation.md)
+  ⎿  Wrote 1936 lines to docs/plans/2026-10-25-kv-v1-implementation.md
+      1 # KV Store v1 Implementation Plan
+      3 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-p
+        lans to implement this plan task-by-task.
+      5 **Goal:** Build the v1 distributed key-value store specified in [
+        design.md](../design.md) and [requirement.md](../requirement.md):
+        P API, a client library, start/stop scripts and a workload genera
+        tor that proves p99 targets at 1K ops/s for N=1 and N=3.
+      7 **Architecture:** Each server is one asyncio process. aiohttp han
+        dlers serve GET from an in-memory dict and push PUT/DELETE record
+        one SQLite transaction per batch (
+     … +2197 lines (ctrl+o to expand)
+
+⏺ Plan complete and saved to docs/plans/2026-10-25-kv-v1-implementation.md. Not
+  committed yet.
+
+  Structure: 11 tasks in 10 milestones, each test-first with the failing test,
+  the exact run command and expected output, the full implementation code, and a
+  commit step.
+
+  ┌───────────────┬──────┬──────────────────────────────────────────────────┐
+  │   Milestone   │ Task │                     Produces                     │
+  ├───────────────┼──────┼──────────────────────────────────────────────────┤
+  │ M0            │ 1    │ venv, package, pytest config                     │
+  │ Scaffolding   │      │                                                  │
+  ├───────────────┼──────┼──────────────────────────────────────────────────┤
+  │ M1 Config and │ 2, 3 │ config.py with load_config and owner_of,         │
+  │  key codec    │      │ keycodec.py with limits                          │
+  ├───────────────┼──────┼──────────────────────────────────────────────────┤
+  │               │      │ storage.py: writer thread, batched commits,      │
+  │ M2 Storage    │ 4    │ apply-after-commit, fail-stop; tests inject      │
+  │               │      │ blocking, counting and failing COMMIT wrappers   │
+  │               │      │ to prove each property                           │
+  ├───────────────┼──────┼──────────────────────────────────────────────────┤
+  │ M3 HTTP       │ 5    │ server.py with every status code from design     │
+  │ server        │      │ section 5 tested                                 │
+  ├───────────────┼──────┼──────────────────────────────────────────────────┤
+  │ M4 Client     │ 6    │ client.py with md5 routing, WrongOwner on 421    │
+  │ library       │      │                                                  │
+  ├───────────────┼──────┼──────────────────────────────────────────────────┤
+  │ M5 Scripts    │ 7    │ start.sh and stop.sh, tested by bringing up a    │
+  │               │      │ real 3-server cluster                            │
+  ├───────────────┼──────┼──────────────────────────────────────────────────┤
+  │ M6 Workload   │ 8    │ bench.py: open-loop, 80/15/5, uniform keys,      │
+  │ generator     │      │ percentile report, pass/fail exit code, CSV      │
+  ├───────────────┼──────┼──────────────────────────────────────────────────┤
+  │ M7 Restart    │ 9    │ SIGKILL mid-load, restart, verify every acked    │
+  │ test          │      │ write                                            │
+  ├───────────────┼──────┼──────────────────────────────────────────────────┤
+  │ M8 Final      │ 10   │ N=1 and N=3 at 1K ops/s for 60 s, results in     │
+  │ measurement   │      │ README                                           │
+  ├───────────────┼──────┼──────────────────────────────────────────────────┤
+  │ M9 Prompts    │ 11   │ prompts/README.md for requirement F12            │
+  └───────────────┴──────┴──────────────────────────────────────────────────┘
+
+  Points worth knowing before execution:
+  - Storage futures are concurrent.futures.Future resolved on the writer thread.
+    The server bridges them with asyncio.wrap_future, so storage is testable
+    without asyncio.
+  - The plan forbids editing design.md and requirement.md, and says to stop and
+    report if the code must deviate.
+  - The restart test is marked as a real durability check: the plan says not to
+    weaken it if it fails.
+
+  Two execution options:
+
+  1. Subagent-driven, this session. I dispatch a fresh subagent per task, review
+     each result against the plan, and keep going. Faster iteration, and I keep
+     the full context.
+  2. Parallel session. You open a new session that uses the executing-plans
+     skill and runs the tasks in batches with checkpoints.
+
+  Which approach, and should I commit the plan first?
+
+❯ <ide_opened_file>The user opened the file /Users/Carl_Guo/Desktop/Distributed
+  _kv_store/docs/plans/2026-10-25-kv-v1-implementation.md in the IDE. This may
+  or may not be related to the current task.</ide_opened_file>
+
+❯ <browser_instruction># Claude in Chrome browser automation
+
+  You have access to browser automation tools (mcp__claude-in-chrome__*) for
+  interacting with web pages in Chrome. Follow these guidelines for effective
+  browser automation.
+
+  ## Loading deferred tools
+
+  If the mcp__claude-in-chrome__* tools are deferred (must be loaded via
+  ToolSearch before use), load every tool you expect to need in ONE ToolSearch
+  call — the select query accepts a comma-separated list — never one call per
+  tool. Start with the core set:
+
+  ToolSearch with query
+  "select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__naviga
+  te,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__read_page,mcp__clau
+  de-in-chrome__tabs_create_mcp,mcp__claude-in-chrome__tabs_close_mcp"
+
+  Add task-specific tools to the same call when the task obviously needs them:
+  read_console_messages / read_network_requests for debugging, form_input for
+  forms, gif_creator for recordings, javascript_tool for page scripting.
+
+  ## GIF recording
+
+  When performing multi-step browser interactions that the user may want to
+  review or share, use mcp__claude-in-chrome__gif_creator to record them.
+
+  You must ALWAYS:
+  * Capture extra frames before and after taking actions to ensure smooth
+  playback
+  * Name the file meaningfully to help the user identify it later (e.g.,
+  "login_process.gif")
+
+  ## Console log debugging
+
+  You can use mcp__claude-in-chrome__read_console_messages to read console
+  output. Console output may be verbose. If you are looking for specific log
+  entries, use the 'pattern' parameter with a regex-compatible pattern. This
+  filters results efficiently and avoids overwhelming output. For example, use
+  pattern: "[MyApp]" to filter for application-specific logs rather than
+  reading all console output.
+
+  ## Alerts and dialogs
+
+  IMPORTANT: Do not trigger JavaScript alerts, confirms, prompts, or browser
+  modal dialogs through your actions. These browser dialogs block all further
+  browser events and will prevent the extension from receiving any subsequent
+  commands. Instead, when possible, use console.log for debugging and then use
+  the mcp__claude-in-chrome__read_console_messages tool to read those log
+  messages. If a page has dialog-triggering elements:
+  1. Avoid clicking buttons or links that may trigger alerts (e.g., "Delete"
+  buttons with confirmation dialogs)
+  2. If you must interact with such elements, warn the user first that this may
+  interrupt the session
+  3. Use mcp__claude-in-chrome__javascript_tool to check for and dismiss any
+  existing dialogs before proceeding
+
+  If you accidentally trigger a dialog and lose responsiveness, inform the user
+  they need to manually dismiss it in the browser.
+
+  ## Avoid rabbit holes and loops
+
+  When using browser automation tools, stay focused on the specific task. If
+  you encounter any of the following, stop and ask the user for guidance:
+  - Unexpected complexity or tangential browser exploration
+  - Browser tool calls failing or returning errors after 2-3 attempts
+  - No response from the browser extension
+  - Page elements not responding to clicks or input
+  - Pages not loading or timing out
+  - Unable to complete the browser task despite multiple approaches
+
+  Explain what you attempted, what went wrong, and ask how the user would like
+  to proceed. Do not keep retrying the same failing browser action or explore
+  unrelated pages without checking in first.
+
+  ## Tab context and session startup
+
+  IMPORTANT: At the start of each browser automation session, call
+  mcp__claude-in-chrome__tabs_context_mcp first to get information about the
+  user's current browser tabs. Use this context to understand what the user
+  might want to work with before creating new tabs.
+
+  Never reuse tab IDs from a previous/other session. Follow these guidelines:
+  1. Only reuse an existing tab if the user explicitly asks to work with it
+  2. Otherwise, create a new tab with mcp__claude-in-chrome__tabs_create_mcp
+  3. If a tool returns an error indicating the tab doesn't exist or is invalid,
+  call tabs_context_mcp to get fresh tab IDs
+  4. When a tab is closed by the user or a navigation error occurs, call
+  tabs_context_mcp to see what tabs are available</browser_instruction>
+
+❯ Remove task 11
+  For task 9, there could be a situation that PUT commit but the server is
+  killed before sending the 200. The client records nothing, but after the
+  restart GET returns the new value. To fix this potential issue, Each writer
+  stops at its first error, so each key has at most one pending (un-acked)
+  operation; Record per key the last acked value and that pending operation (a
+  pending Delete means NotFound is also valid); Assert the Get result equals
+  the acked value or the pending value. Only a result that is neither is a bug.
+
+  Fix these and then commit
+  ⎿  2 skills available
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ One simplification to the validity logic before committing: a key with no
+  acked state is valid as absent regardless of the pending op type, so the
+  branch can be plain.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+⏺ Committed as d3add08.
+
+  Changes to the plan:
+
+  - Task 11 removed. The milestone table, layout listing, README template,
+    implementer rules and verification checklist no longer mention the prompts
+    deliverable. Ten tasks remain.
+  - Task 9 rewritten for the commit-then-killed case. Each writer records its
+    operation as pending before sending it, promotes it to acked on response,
+    and stops at its first error. That guarantees at most one pending operation
+    per key. Verification builds the valid set per key as the acked value, or
+    absent if the key was never acked, plus the pending value if one exists,
+    where a pending Delete makes NotFound valid. A Get that returns anything
+    outside that set is the only failure. The test also asserts there are at
+    most eight pending keys, one per writer.
+
+  The plan is ready to execute. Tell me whether you want subagent-driven
+  execution in this session or a separate session with the executing-plans
+  skill.
