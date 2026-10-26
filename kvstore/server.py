@@ -33,6 +33,7 @@ def create_app(storage: Storage, server_id: int, n_servers: int) -> web.Applicat
         web.get("/keys/{key}", handle_get),
         web.put("/keys/{key}", handle_put),
         web.delete("/keys/{key}", handle_delete),
+        web.get("/info", handle_info),
     ])
     return app
 
@@ -62,6 +63,13 @@ async def _await_commit(fut: Future) -> None:
 
 async def handle_empty_key(request: web.Request) -> web.Response:
     raise web.HTTPBadRequest(text="bad key: empty key")
+
+
+async def handle_info(request: web.Request) -> web.Response:
+    # Identifies the process behind this port, so start.sh can tell the server it launched
+    # from a leftover one (e.g. an n=1 server still holding an n=3 server's port).
+    return web.json_response({"pid": os.getpid(), "id": request.app[SERVER_ID],
+                              "n": request.app[N_SERVERS]})
 
 
 async def handle_get(request: web.Request) -> web.Response:

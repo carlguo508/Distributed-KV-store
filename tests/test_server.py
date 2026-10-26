@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from kvstore.config import owner_of
@@ -178,3 +180,15 @@ async def test_commit_failure_is_500(aiohttp_client, tmp_path):
     assert "commit failed" in await r.text()
     assert fatal
     s.close()
+
+
+# Checks: GET /info identifies the process behind a port, so start.sh and clients can tell
+#   their own server from a leftover one (design.md §6 Scripts).
+# Setup: an app for server 2 of 3, running in this test process.
+# Action: GET /info.
+# Expected: 200 JSON {"pid": this process's pid, "id": 2, "n": 3}.
+async def test_info_reports_pid_id_and_n(aiohttp_client, storage):
+    c = await aiohttp_client(create_app(storage, server_id=2, n_servers=3))
+    r = await c.get("/info")
+    assert r.status == 200
+    assert await r.json() == {"pid": os.getpid(), "id": 2, "n": 3}

@@ -1,5 +1,6 @@
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -85,3 +86,15 @@ def test_owner_of_single_server_is_always_zero():
 def test_owner_of_covers_all_servers():
     owners = {owner_of(f"k{i}".encode(), 4) for i in range(200)}
     assert owners == {0, 1, 2, 3}
+
+
+# Checks: the shipped n=3 and n=1 configs never share a port or a data dir, so a leftover
+#   server from one can never answer for the other (the 2026-10-26 orphan on 7300).
+# Setup: the repo's cluster.json and cluster-1.json.
+# Action: load both.
+# Expected: their port sets and data_dir sets are disjoint.
+def test_shipped_configs_do_not_overlap():
+    root = Path(__file__).resolve().parents[1]
+    a, b = load_config(root / "cluster.json"), load_config(root / "cluster-1.json")
+    assert not {s.port for s in a.servers} & {s.port for s in b.servers}
+    assert not {s.data_dir for s in a.servers} & {s.data_dir for s in b.servers}

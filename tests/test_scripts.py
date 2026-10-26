@@ -92,3 +92,52 @@ def test_start_fails_when_port_never_ready(tmp_path):
     assert str(data_dir / "kvserver.log") in out.stderr
     assert "listening" not in out.stdout
     assert not (data_dir / "kvserver.pid").exists()
+
+
+# Checks: start.sh refuses a port that something else already listens on, names the holder
+#   and says how to fix it, instead of mistaking the holder for its own server (the
+#   2026-10-26 run where an orphan n=1 server answered for s0).
+# Setup: a 1-server config whose port this test process holds with a listening socket.
+# Action: run start.sh.
+# Expected: non-zero exit; stderr says "already in use", names this test's pid and has a
+#   "fix:" line; no server was launched, so no pid file and no log.
+def test_start_refuses_port_in_use(tmp_path):
+    cfg_path = write_cluster(tmp_path, 1)
+    s = load_config(cfg_path).servers[0]
+    holder = socket.socket()
+    holder.bind((s.host, s.port))
+    holder.listen()
+    try:
+        env = {**os.environ, "PYTHON": sys.executable, "START_TIMEOUT": "5"}
+        out = subprocess.run(["scripts/start.sh", str(cfg_path)], cwd=ROOT, env=env,
+                             capture_output=True, text=True, timeout=60)
+    finally:
+        holder.close()
+    assert out.returncode != 0
+    assert "already in use" in out.stderr
+    assert str(os.getpid()) in out.stderr
+    assert "fix:" in out.stderr
+    assert not (Path(s.data_dir) / "kvserver.pid").exists()
+    assert not (Path(s.data_dir) / "kvserver.log").exists()
+
+
+# Checks: start.sh notices at once when its server process exits during startup, instead of
+#   waiting out START_TIMEOUT.
+# Setup: a 1-server config whose data dir has a DIRECTORY named kv.db, so the server exits
+#   before listening; START_TIMEOUT=30.
+# Action: run start.sh and time it.
+# Expected: non-zero exit well under 30 s (< 10 s); stderr says the server exited and shows
+#   the tail of its log; no pid file left behind.
+def test_start_fails_fast_when_server_exits(tmp_path):
+    cfg_path = write_cluster(tmp_path, 1)
+    data_dir = Path(load_config(cfg_path).servers[0].data_dir)
+    (data_dir / "kv.db").mkdir(parents=True)
+    env = {**os.environ, "PYTHON": sys.executable, "START_TIMEOUT": "30"}
+    t0 = time.monotonic()
+    out = subprocess.run(["scripts/start.sh", str(cfg_path)], cwd=ROOT, env=env,
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode != 0
+    assert time.monotonic() - t0 < 10
+    assert "exited" in out.stderr
+    assert "Error" in out.stderr                      # the log tail (sqlite3/OSError traceback)
+    assert not (data_dir / "kvserver.pid").exists()
