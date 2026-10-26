@@ -1,3 +1,9 @@
+> Early option analysis, written before the second spike. Several recommendations here were
+> later reversed: v1 uses HTTP/1.1 (aiohttp) instead of custom binary TCP, and SQLite WAL
+> instead of dict + append-only log + snapshot, so topic 5 (compaction) and the per-record
+> CRC are handled by SQLite. Apply-after-commit and client-side hashing were kept. The final
+> decisions are in [design.md §1](design.md#1-overview).
+
 **Alternatives**
 
 | Option | How | Consistency | Cost |

@@ -20,7 +20,8 @@ transaction has committed with a full fsync.
 | Storage | SQLite, WAL, `synchronous=FULL`, `fullfsync=ON`, `checkpoint_fullfsync=ON` | Durability, crash recovery and space reuse come from SQLite; fullfsync is required on macOS |
 | Durability | One transaction per batch (group commit); ack after COMMIT | Per-write fullfsync costs ~4 ms; batching brings it to ~0.3 ms per write |
 | Visibility | Apply to the in-memory dict only after COMMIT (apply-after-commit) | No client can read a value that could vanish on restart |
-| Failure policy | On COMMIT failure: fail the batch with 500, exit the process | Disk state after an fsync error is uncertain; restart reloads the committed state |
+| Checkpointing | Auto-checkpoint off; background PASSIVE checkpoint every 1 s; writer runs TRUNCATE between batches when the WAL passes 64 MB | An auto-checkpoint runs inside a COMMIT and stalls every write queued behind it; measured as the main source of write-tail spikes ([spike/checkpoint](../spike/checkpoint/README.md)) |
+| Failure policy | On COMMIT or checkpoint failure: fail the batch with 500, exit the process | Disk state after an fsync error is uncertain; restart reloads the committed state |
 
 ## 2. Architecture
 
@@ -44,6 +45,7 @@ flowchart LR
         Q0 --> W0[writer thread<br/>batch -> BEGIN..COMMIT]
         W0 -->|after COMMIT| D0
         W0 --> DB0[(kv.db + kv.db-wal)]
+        C0[checkpoint thread<br/>PASSIVE every 1 s] --> DB0
     end
     subgraph S1[Server 1]
         A1[...]
@@ -61,10 +63,13 @@ Per server, the components are:
 - **aiohttp handlers** on the event loop. GET is a dict lookup. PUT/DELETE enqueue a write
   record with a future and await it.
 - **Write queue**, a `queue.Queue` shared between the event loop and the writer thread.
-- **Writer thread**, the only thread that touches SQLite after startup and the only code that
-  mutates the dict. It drains the queue into a batch of up to 256 records, runs one
-  transaction, and on success applies the batch to the dict in queue order, then resolves the
-  futures through `loop.call_soon_threadsafe`.
+- **Writer thread**, the only thread that writes to SQLite and the only code that mutates the
+  dict after startup. It drains the queue into a batch of up to `max_batch` (256) records, runs
+  one transaction, and on success applies the batch to the dict in queue order, then resolves
+  the records' `concurrent.futures.Future`s, which the handlers await through
+  `asyncio.wrap_future`. Between batches it bounds the WAL (§7 Checkpointing).
+- **Checkpoint thread**, with its own connection, runs `PRAGMA wal_checkpoint(PASSIVE)` every
+  second to copy WAL pages into `kv.db`. It never writes rows and never blocks the writer.
 - **In-memory dict**, `bytes -> bytes`. Invariant: the dict always equals the committed state
   of the database. It is loaded from the database at startup and modified only by the writer
   after COMMIT.
@@ -162,12 +167,13 @@ Values are raw bytes in the request or response body, `Content-Type: application
 | Put | `PUT /keys/{key}` body = value (0..65536 bytes) | 200, empty body | 400 bad key, 413 value too large, 421 wrong owner, 500 commit failed |
 | Get | `GET /keys/{key}` | 200, body = value (empty body for empty value) | 404 key absent, 400, 421 |
 | Delete | `DELETE /keys/{key}` | 200, also for an absent key | 400, 421, 500 |
+| Info | `GET /info` | 200, JSON `{"pid": ..., "id": ..., "n": ...}` | – |
 
 Error semantics:
 
 | Status | Meaning | Body |
 |--------|---------|------|
-| 400 | key not valid base64url, empty, or longer than 256 bytes after decoding | text reason |
+| 400 | key not valid base64url, empty (including the bare path `/keys/`), or longer than 256 bytes after decoding | text reason |
 | 404 | key does not exist (Get only) | `NotFound` |
 | 413 | value longer than 64 KiB | text reason |
 | 421 | this server is not the owner of the key | `WRONG_OWNER <owner index>` |
@@ -175,6 +181,10 @@ Error semantics:
 
 Put returns 200 for both create and replace. A client that times out may retry; Put and Delete
 are idempotent for the same value.
+
+`GET /info` identifies the process behind a port: its pid, server id and N. `scripts/start.sh`
+uses it to confirm that the server answering is the one it just launched (§6). It is not a
+health check and says nothing about the disk.
 
 ## 6. Configuration
 
@@ -192,15 +202,26 @@ addresses cannot drift:
 }
 ```
 
-- `N = len(servers)`; owner of a key is `servers[md5(key) % N]`. The order of the list is part
-  of the configuration and must not change while data exists.
+- `N = len(servers)`, 1 to 4; owner of a key is `servers[md5(key) % N]`. The order of the list
+  is part of the configuration and must not change while data exists. Each `id` must equal its
+  position in the list, since a server checks ownership against its own id; loading rejects a
+  mismatch.
+- `cluster.json` (N=3, ports 7300-7302) and `cluster-1.json` (N=1, port 7400, `data/single`)
+  share no port or data directory, so a server left over from one cannot answer for the other.
 - A server is started as `kvserver --config cluster.json --id 0`. It owns `data_dir/kv.db`.
 - SQLite pragmas on the writer connection: `journal_mode=WAL`, `synchronous=FULL`,
   `fullfsync=ON`, `checkpoint_fullfsync=ON`.
-- Scripts: `scripts/start.sh` launches every server in the file in the background, writes pid
-  files to `data/sX/kvserver.pid`, and waits until each port accepts a TCP connection.
-  `scripts/stop.sh` sends SIGTERM to each pid. The scripts never delete `kv.db`, `kv.db-wal`
-  or `kv.db-shm`.
+- Scripts: `scripts/start.sh [config]` launches every server in the file in the background and
+  writes pid files to `<data_dir>/kvserver.pid`, logs to `<data_dir>/kvserver.log`. Per server:
+  - skips it if its pid file names a live process (no second writer on one `kv.db`);
+  - refuses to launch if the port is already in use, printing the pid and command line holding it;
+  - waits up to `START_TIMEOUT` seconds (default 20) until `GET /info` returns the launched pid,
+    the expected id and N (`kvstore/probe.py`). A bare TCP connect is not enough, because
+    another process may hold the port. It fails at once with the log tail if the server exits
+    during startup, and fails if a different process answers.
+
+  `scripts/stop.sh [config]` sends SIGTERM to each pid. The scripts never delete `kv.db`,
+  `kv.db-wal` or `kv.db-shm`.
 
 ## 7. Startup and recovery
 
@@ -208,9 +229,10 @@ Startup, in order, before the port is opened:
 
 1. Open `kv.db`, set pragmas, create the table if missing. SQLite replays the WAL here if the
    previous process died mid-write, so the database reaches the last committed transaction.
-2. `SELECT k, v FROM kv` into the dict. This is the only read connection ever opened, and it is
-   closed when the load finishes so it can never block a checkpoint.
-3. Start the writer thread with its own connection.
+2. `SELECT k, v FROM kv` into the dict. This connection is closed when the load finishes, so
+   no connection holds a long-lived read transaction that could block a checkpoint.
+3. Start the writer thread with its own connection (`wal_autocheckpoint=0`), and the
+   checkpoint thread with another.
 4. Start listening. A client that can connect sees a server whose dict is complete.
 
 What survives what:
@@ -223,28 +245,46 @@ What survives what:
 | COMMIT error at runtime | kept up to the last good commit | batch gets 500 | fail-stop, then restart reloads committed state |
 | Loss of the server's disk | lost | lost | out of scope for v1 (no replication) |
 
-Checkpointing: SQLite auto-checkpoints when the WAL passes 1000 pages, inside a COMMIT on the
-writer thread. With `checkpoint_fullfsync=ON` that commit pays an extra full fsync. Since no
-connection holds a read transaction after startup, checkpoints always complete and the WAL
-stays bounded.
+Checkpointing: SQLite's default auto-checkpoint runs inside the COMMIT that pushes the WAL past
+1,000 pages, so every write queued behind that COMMIT waits for the copy into `kv.db`. The
+checkpoint spike ([spike/checkpoint/README.md](../spike/checkpoint/README.md)) measured this as
+the main source of write-tail spikes (one 20 s N=3 run reached put p99 108 ms). v1 therefore:
+
+- disables auto-checkpoint on the writer connection;
+- runs a PASSIVE checkpoint every second on a separate connection. PASSIVE never blocks the
+  writer, but under steady writes it never resets the WAL, because a reset needs a moment with
+  every frame copied and no write pending;
+- bounds the WAL on the writer: after a batch is acked, if `kv.db-wal` is larger than 64 MB,
+  the writer runs `wal_checkpoint(TRUNCATE)` before taking the next batch. Most pages were
+  already copied by the background thread, so the stall is short and happens about once per
+  64 MB of writes. In the measured runs every TRUNCATE fell in the prefill, none in the timed run.
+
+The WAL therefore stays near 64 MB plus one batch. Any error from either checkpoint is fatal,
+like a failed COMMIT. With `checkpoint_fullfsync=ON` checkpoints are as durable as commits.
 
 ## 8. Test strategy
 
 | Level | What | How |
 |-------|------|-----|
 | Unit | key decoding, length limits, owner check, status codes, empty value vs absent | pytest against the aiohttp app with `aiohttp.test_utils` |
-| Unit | writer thread: batch applied to dict only after COMMIT, nothing applied and process exits on a forced COMMIT failure | inject a failing SQLite connection |
+| Unit | writer thread: batch applied to dict only after COMMIT, nothing applied and process exits on a forced COMMIT failure; cancelled futures do not kill the writer | inject a failing SQLite connection and an `on_fatal` hook |
+| Unit | checkpointing: writer has auto-checkpoint off, background thread runs PASSIVE checkpoints, writer TRUNCATEs above the WAL limit, a checkpoint failure is fatal | small WAL limit and short interval, injected connections |
+| Unit | readiness probe: accepts only the expected pid, id and N; rejects a listener without `/info` | `kvstore/probe.py` against test servers |
 | Integration | three servers from `cluster.json`, client library routes Put/Get/Delete, 421 on misrouted key | start via `scripts/start.sh`, drive with the client library |
+| Integration | `start.sh` refuses a busy port, fails when a server never becomes ready or exits during startup | run the script against a port the test holds, a short `START_TIMEOUT`, and a data dir where `kv.db` cannot be opened |
 | Restart (A8) | acked writes survive SIGKILL mid-load | run the generator, SIGKILL one server during writes, restart it, verify every acked Put is readable and every acked Delete returns 404; `-wal` and `-shm` files are left in place |
-| Performance | 1K ops/s, 80/15/5, p99 read < 50 ms and write < 100 ms | open-loop generator at 1,000 ops/s for 60 s against N=1 and N=3; report p50/p95/p99/p999 measured client-side; spike baseline: put p99 11 ms (N=1), 18 ms (N=3) |
+| Performance | 1K ops/s, 80/15/5, p99 read < 50 ms and write < 100 ms | open-loop generator at 1,000 ops/s for 60 s against N=1 and N=3, after a prefill; report p50/p95/p99/p99.9/max measured client-side from each request's scheduled time. Measured 2026-10-26: put p99 14.5 ms (N=1), 30.9 ms (N=3); Get p99 under 1 ms ([README Results](../README.md#results)) |
 | Durability pragma | `fullfsync` really on | startup asserts `PRAGMA fullfsync` returns 1 and `PRAGMA synchronous` returns 2 |
 
-Workload generator (`kvbench`): open-loop at a fixed arrival rate, 32 keep-alive connections
-per server, uniform keys over 100K, 80% Get / 15% Put / 5% Delete, 1 KiB values, histogram
-report printed and saved as CSV.
+Workload generator (`kvbench`): first prefills every key once (not measured, skip with
+`--no-prefill`) so timed Gets read real values; then open-loop at a fixed arrival rate, 32
+keep-alive connections per server, uniform keys over 100K, 80% Get / 15% Put / 5% Delete, 1 KiB
+values. It prints a percentile table per operation, the Get hit ratio and errors by type (with
+a hint on 421), optionally saves a CSV, and with `--per-second` a write-latency table per
+second. Exit code 0 only if both p99 targets are met with no errors.
 
 ## 9. Out of scope for v1
 
 Replication and consensus, failover, partition handling, write-queue backpressure, health
-endpoint, graceful drain on SIGTERM, consistency checker in the workload generator, server-side
+endpoint (`/info` only identifies the process), graceful drain on SIGTERM, consistency checker in the workload generator, server-side
 latency logging, VACUUM, metrics endpoint, TLS, auth.

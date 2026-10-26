@@ -93,7 +93,7 @@ Decision: latency is measured client-side by the workload generator on the same 
 | Reporting | mean vs histogram | p50/p95/p99/p999 via histogram, printed and saved |
 
 ### A6. Retries and idempotency
-A timed-out Put may already have been applied. Put/Delete are idempotent for the same value, so no request IDs; the client retries after timeout.
+A timed-out Put may already have been applied. Put/Delete are idempotent for the same value, so no request IDs; a caller may retry after a timeout. The v1 client library does not retry on its own: it raises the timeout to the caller.
 
 ### A7. Concurrency semantics
 No CAS or versions. Last writer wins by the server's single per-key order.

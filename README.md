@@ -5,7 +5,8 @@ database (WAL, `synchronous=FULL`, `fullfsync=ON`) and an in-memory copy of comm
 Writes are group-committed and acknowledged only after the transaction is durable.
 
 Docs: [requirements](docs/requirement.md) · [design](docs/design.md) ·
-[spike measurements](spike/README.md)
+[early trade-off notes](docs/tradeoff.md) · [spike measurements](spike/README.md) ·
+[checkpoint spike](spike/checkpoint/README.md)
 
 ## Quickstart
 
@@ -132,8 +133,9 @@ second of each run: [results/n1.per-second.csv](results/n1.per-second.csv),
 [results/n3.per-second.csv](results/n3.per-second.csv).
 
 Restart test: `tests/test_restart.py` SIGKILLs a server under load, restarts it and verifies
-every acknowledged write. Result: PASS, 2026-10-25. A manual demo on the 3-server cluster
-(SIGKILL server 1, restart it with `scripts/start.sh`) also passed: the restarted server loaded
+every acknowledged write. Result: PASS, last run 2026-10-26 on the current code (background
+checkpoints included). A manual demo on the 3-server cluster on 2026-10-25 (SIGKILL server 1,
+restart it with `scripts/start.sh`) also passed: the restarted server loaded
 its committed keys and the following 5 s run at 1,000 ops/s passed with 0 errors.
 
 SIGKILL ends the process but not the OS, so the restart test proves that acknowledged writes
@@ -144,10 +146,15 @@ startup check that `synchronous=FULL` and `fullfsync=ON` are in effect.
 
     kvstore/config.py    cluster.json loading, owner_of = md5(key) % N
     kvstore/keycodec.py  base64url key codec, size limits
-    kvstore/storage.py   SQLite + writer thread, batched commits, apply-after-commit, fail-stop
+    kvstore/storage.py   SQLite + writer thread, batched commits, apply-after-commit, fail-stop,
+                         background PASSIVE checkpoints, WAL bounded at 64 MB
     kvstore/server.py    aiohttp handlers and startup order
     kvstore/client.py    async client with routing
     kvstore/bench.py     kvbench workload generator
     kvstore/probe.py     start.sh readiness probe: GET /info must match the launched pid, id and N
     scripts/             start.sh / stop.sh
+    tests/               pytest suite: unit, integration, restart (SIGKILL) test
+    docs/                requirements, design, trade-off notes, implementation plan, slides
+    results/             committed benchmark CSVs behind the Results table
+    prompts/v1/          coding-agent prompts used to build v1 (design, code, review)
     spike/               feasibility measurements that drove the design
