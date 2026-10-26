@@ -51,10 +51,14 @@ deletes `kv.db`, `kv.db-wal` or `kv.db-shm`.
 
 ## Workload generator
 
-`kvbench` runs an open loop at a fixed arrival rate with 80% Get / 15% Put / 5% Delete over
-uniformly chosen keys. Latency is measured client-side and includes queueing. It prints a
-p50/p95/p99/p99.9/max table per operation. Exit code 0 means read p99 < 50 ms, write p99 <
-100 ms and no errors; otherwise 1. The servers in the config must already be running.
+`kvbench` first **prefills** the store: it writes every key in the key space once, so timed
+Gets read real values instead of mostly missing. Prefill is not measured; 100K keys took about
+30 s on one server. The timed run is then an open loop at a fixed arrival rate with 80% Get /
+15% Put / 5% Delete over uniformly chosen keys. Latency is measured client-side and includes
+queueing. It prints a p50/p95/p99/p99.9/max table per operation, plus the share of Gets that
+found their key versus NotFound; the CSV carries the same split in its `hits` and `not_found`
+columns. Exit code 0 means read p99 < 50 ms, write p99 < 100 ms and no errors, including
+prefill errors; otherwise 1. The servers in the config must already be running.
 
 | Flag | Meaning | Default |
 |------|---------|---------|
@@ -66,6 +70,7 @@ p50/p95/p99/p99.9/max table per operation. Exit code 0 means read p99 < 50 ms, w
 | `--conns` | Keep-alive connections (and concurrent workers) per server | `32` |
 | `--seed` | Random seed for the op mix and key choice; omit for a different run each time | none |
 | `--out` | Write the per-operation results as CSV to this path; omit to print only | none |
+| `--no-prefill` | Skip the prefill, e.g. when the same key space is already loaded | prefill on |
 
 Examples:
 

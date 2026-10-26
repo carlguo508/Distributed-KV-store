@@ -57,7 +57,7 @@ def test_report_pass_fail_uses_targets():
 def test_report_csv_has_one_row_per_op():
     rep = Report(latencies={"get": [1.0, 2.0], "put": [3.0], "delete": []}, seconds=1, errors=0)
     lines = rep.to_csv().strip().splitlines()
-    assert lines[0] == "op,count,ops_per_sec,p50_ms,p95_ms,p99_ms,p999_ms,max_ms"
+    assert lines[0] == "op,count,ops_per_sec,p50_ms,p95_ms,p99_ms,p999_ms,max_ms,hits,not_found"
     assert lines[1].startswith("get,2,")
     assert lines[2].startswith("put,1,")
     assert lines[3].startswith("delete,0,")
@@ -115,13 +115,15 @@ class StallingClient:
 #   waiting because the generator itself fell behind is counted (no coordinated omission,
 #   requirement A5 open loop).
 # Setup: a fake client whose first request freezes the event loop for 200 ms; 100 ops/s for 0.5 s.
+#   Prefill is off so that first request is a timed one, not a prefill Put.
 # Action: run the generator.
 # Expected: the ~19 requests scheduled during the freeze are issued late, and each records at
 #   least 100 ms of latency; at least 10 such samples overall.
 async def test_latency_counts_from_scheduled_time(monkeypatch):
     monkeypatch.setattr(bench, "KVClient", StallingClient)
     cfg = ClusterConfig(servers=(ServerConfig(0, "h", 1, "d"),))
-    rep = await run(cfg, rate=100, seconds=0.5, n_keys=10, value_size=8, conns_per_server=4, seed=1)
+    rep = await run(cfg, rate=100, seconds=0.5, n_keys=10, value_size=8, conns_per_server=4, seed=1,
+                    prefill=False)
     all_ms = [ms for v in rep.latencies.values() for ms in v]
     assert sum(1 for ms in all_ms if ms >= 100.0) >= 10
 
@@ -169,3 +171,95 @@ async def test_run_counts_wrong_owner_errors(storage):
     assert rep.error_counts.get("wrong_owner", 0) > 0
     assert rep.errors == sum(rep.error_counts.values())
     assert not rep.passed()
+
+
+class RecordingClient:
+    """Fake KVClient that records every call in order; Get reports every key as present."""
+
+    def __init__(self, cfg, conns_per_server=32):
+        self.calls: list[tuple[str, bytes]] = []
+        RecordingClient.last = self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        pass
+
+    async def put(self, key, value):
+        self.calls.append(("put", key))
+
+    async def get(self, key):
+        self.calls.append(("get", key))
+        return b"v"
+
+    async def delete(self, key):
+        self.calls.append(("delete", key))
+
+
+# Checks: every key in the key space is written before the timed run, so Gets read real data
+#   (realistic workload), and prefill requests are not counted in the measured latencies.
+# Setup: a recording fake client; 50 keys; 100 ops/s for 0.2 s.
+# Action: run the generator with prefill on (the default).
+# Expected: the first 50 calls are Puts covering all 50 keys exactly once; the report says 50 keys
+#   were prefilled; the measured op count is only the ~20 timed requests.
+async def test_prefill_puts_every_key_before_timed_run(monkeypatch):
+    monkeypatch.setattr(bench, "KVClient", RecordingClient)
+    cfg = ClusterConfig(servers=(ServerConfig(0, "h", 1, "d"),))
+    rep = await run(cfg, rate=100, seconds=0.2, n_keys=50, value_size=8, conns_per_server=4, seed=1)
+    calls = RecordingClient.last.calls
+    first = calls[:50]
+    assert all(op == "put" for op, _ in first)
+    assert sorted(k for _, k in first) == sorted(f"key-{i:08d}".encode() for i in range(50))
+    assert rep.prefill_keys == 50
+    timed = sum(len(v) for v in rep.latencies.values())
+    assert timed == len(calls) - 50
+    assert 15 <= timed <= 25
+
+
+# Checks: with prefill off, nothing is written before the timed run (escape hatch for runs on
+#   data that is already loaded).
+# Setup: a recording fake client; 50 keys; 100 ops/s for 0.2 s.
+# Action: run the generator with prefill=False.
+# Expected: no extra calls beyond the timed ones, and prefill_keys is 0.
+async def test_no_prefill_skips_writes(monkeypatch):
+    monkeypatch.setattr(bench, "KVClient", RecordingClient)
+    cfg = ClusterConfig(servers=(ServerConfig(0, "h", 1, "d"),))
+    rep = await run(cfg, rate=100, seconds=0.2, n_keys=50, value_size=8, conns_per_server=4, seed=1,
+                    prefill=False)
+    assert rep.prefill_keys == 0
+    assert sum(len(v) for v in rep.latencies.values()) == len(RecordingClient.last.calls)
+
+
+# Checks: the report shows the Get hit / not-found split in text and CSV.
+# Setup: a report with 90 Gets, of which 81 hits and 9 not found.
+# Action: render text and CSV.
+# Expected: text shows "hits 81 (90.0%)" and "not found 9 (10.0%)"; the CSV get row ends with
+#   "81,9" and the put/delete rows leave both columns empty.
+def test_report_shows_get_hit_ratio():
+    rep = Report(latencies={"get": [1.0] * 90, "put": [1.0], "delete": [1.0]}, seconds=1, errors=0,
+                 get_hits=81, get_not_found=9)
+    text = rep.to_text()
+    assert "hits 81 (90.0%)" in text and "not found 9 (10.0%)" in text
+    lines = rep.to_csv().strip().splitlines()
+    assert lines[1].startswith("get,") and lines[1].endswith(",81,9")
+    assert lines[2].endswith(",,") and lines[3].endswith(",,")
+
+
+# Checks: after prefill, Gets mostly find their key, so the read path measured is a real lookup
+#   (the bug: without prefill nearly every Get was a NotFound).
+# Setup: a real single-server test app; 100 keys; 200 ops/s for 1 s.
+# Action: run the generator with prefill.
+# Expected: hits + not found equals the number of Gets, and the hit ratio is above 90%. Only the
+#   ~5% Deletes can make a key absent, and Puts recreate keys.
+async def test_get_hit_ratio_above_90_percent_after_prefill(storage):
+    srv = TestServer(create_app(storage, server_id=0, n_servers=1))
+    await srv.start_server()
+    try:
+        cfg = ClusterConfig(servers=(ServerConfig(0, srv.host, srv.port, "d"),))
+        rep = await run(cfg, rate=200, seconds=1, n_keys=100, value_size=64, conns_per_server=4, seed=1)
+    finally:
+        await srv.close()
+    assert rep.errors == 0
+    assert rep.get_hits + rep.get_not_found == len(rep.latencies["get"])
+    assert rep.get_hits / len(rep.latencies["get"]) > 0.90

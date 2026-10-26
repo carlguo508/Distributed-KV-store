@@ -69,6 +69,13 @@ class Report:
     errors: int
     # Breakdown of `errors` by classify_error kind; only kinds that occurred are present.
     error_counts: dict[str, int] = field(default_factory=dict)
+    # Timed Gets split by outcome: found a value vs NotFound. Shows the reads measured are
+    # real lookups, not mostly misses.
+    get_hits: int = 0
+    get_not_found: int = 0
+    # Keys written before the timed run (0 when prefill is off), and how long that took.
+    prefill_keys: int = 0
+    prefill_seconds: float = 0.0
     rows: list[dict] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -80,6 +87,9 @@ class Report:
                 "op": op, "count": len(s), "ops_per_sec": len(s) / self.seconds if self.seconds else 0.0,
                 "p50_ms": percentile(s, 50), "p95_ms": percentile(s, 95), "p99_ms": percentile(s, 99),
                 "p999_ms": percentile(s, 99.9), "max_ms": s[-1] if s else None,
+                # Hit counts only apply to Gets; None renders as an empty CSV cell.
+                "hits": self.get_hits if op == "get" else None,
+                "not_found": self.get_not_found if op == "get" else None,
             })
 
     def p99(self, op: str) -> float | None:
@@ -95,17 +105,25 @@ class Report:
         return read_ok and write_ok
 
     def to_csv(self) -> str:
-        cols = ["op", "count", "ops_per_sec", "p50_ms", "p95_ms", "p99_ms", "p999_ms", "max_ms"]
+        cols = ["op", "count", "ops_per_sec", "p50_ms", "p95_ms", "p99_ms", "p999_ms", "max_ms",
+                "hits", "not_found"]
         fmt = lambda v: "" if v is None else (f"{v:.2f}" if isinstance(v, float) else str(v))
         return "\n".join([",".join(cols)] + [",".join(fmt(r[c]) for c in cols) for r in self.rows]) + "\n"
 
     def to_text(self) -> str:
         total = sum(r["count"] for r in self.rows)
-        lines = [f"{'op':7s}{'count':>8s}{'ops/s':>9s}{'p50':>9s}{'p95':>9s}{'p99':>9s}{'p99.9':>9s}{'max':>9s}"]
+        lines = []
+        if self.prefill_keys:
+            lines.append(f"prefill: {self.prefill_keys} keys in {self.prefill_seconds:.1f}s (not measured)")
+        lines += [f"{'op':7s}{'count':>8s}{'ops/s':>9s}{'p50':>9s}{'p95':>9s}{'p99':>9s}{'p99.9':>9s}{'max':>9s}"]
         for r in self.rows:
             f = lambda v: "-" if v is None else f"{v:8.2f}"
             lines.append(f"{r['op']:7s}{r['count']:8d}{r['ops_per_sec']:9.0f}{f(r['p50_ms'])}{f(r['p95_ms'])}"
                          f"{f(r['p99_ms'])}{f(r['p999_ms'])}{f(r['max_ms'])}")
+        gets = self.get_hits + self.get_not_found
+        if gets:
+            lines.append(f"get: hits {self.get_hits} ({100.0 * self.get_hits / gets:.1f}%), "
+                         f"not found {self.get_not_found} ({100.0 * self.get_not_found / gets:.1f}%)")
         lines.append(f"total {total} ops in {self.seconds:.0f}s = {total / self.seconds:.0f} ops/s, errors={self.errors}")
         if self.error_counts:
             lines.append("errors by type: " + ", ".join(
@@ -118,7 +136,8 @@ class Report:
 
 
 async def run(cfg: ClusterConfig, rate: int, seconds: float, n_keys: int = 100_000,
-              value_size: int = 1024, conns_per_server: int = 32, seed: int | None = None) -> Report:
+              value_size: int = 1024, conns_per_server: int = 32, seed: int | None = None,
+              prefill: bool = True) -> Report:
     rng = random.Random(seed)
     keys = [f"key-{i:08d}".encode() for i in range(n_keys)]          # uniform key space (A5)
     # One random value reused for every Put: generating 1 KiB per request would cost
@@ -127,10 +146,26 @@ async def run(cfg: ClusterConfig, rate: int, seconds: float, n_keys: int = 100_0
     latencies: dict[str, list[float]] = {op: [] for op in OPS}
     errors = 0
     error_counts: dict[str, int] = {}
+    get_hits = get_not_found = 0
     q: asyncio.Queue = asyncio.Queue()
 
-    async def worker(kv: KVClient) -> None:
+    def count_error(exc: BaseException) -> None:
         nonlocal errors
+        errors += 1
+        kind = classify_error(exc)
+        error_counts[kind] = error_counts.get(kind, 0) + 1
+
+    async def prefill_worker(kv: KVClient, it) -> None:
+        # Workers share one iterator, so each key is written exactly once. Prefill errors are
+        # counted like timed ones: a failed prefill (e.g. a wrong cluster file) fails the run.
+        for key in it:
+            try:
+                await kv.put(key, value)
+            except Exception as exc:  # noqa: BLE001 - counted, prefill continues
+                count_error(exc)
+
+    async def worker(kv: KVClient) -> None:
+        nonlocal get_hits, get_not_found
         while True:
             item = await q.get()
             if item is None:
@@ -139,7 +174,10 @@ async def run(cfg: ClusterConfig, rate: int, seconds: float, n_keys: int = 100_0
             key = keys[rng.randrange(n_keys)]
             try:
                 if op == "get":
-                    await kv.get(key)
+                    if await kv.get(key) is None:
+                        get_not_found += 1
+                    else:
+                        get_hits += 1
                 elif op == "put":
                     await kv.put(key, value)
                 else:
@@ -149,11 +187,18 @@ async def run(cfg: ClusterConfig, rate: int, seconds: float, n_keys: int = 100_0
                 # delay counts, which avoids "coordinated omission" hiding slow periods.
                 latencies[op].append((time.perf_counter() - scheduled_at) * 1000.0)
             except Exception as exc:  # noqa: BLE001 - counted, run continues
-                errors += 1
-                kind = classify_error(exc)
-                error_counts[kind] = error_counts.get(kind, 0) + 1
+                count_error(exc)
 
     async with KVClient(cfg, conns_per_server=conns_per_server) as kv:
+        # Prefill: write every key once before the clock starts. Without it the store starts
+        # empty and ~all Gets are NotFound, which measures a cheap miss instead of a real read
+        # of a 1 KiB value. Closed loop, as fast as the pool allows; it is setup, not measured.
+        prefill_start = time.perf_counter()
+        if prefill:
+            it = iter(keys)
+            await asyncio.gather(*(prefill_worker(kv, it) for _ in range(conns_per_server * cfg.n)))
+        prefill_seconds = time.perf_counter() - prefill_start
+
         # One worker per pooled connection, so each worker holds at most one in-flight request.
         workers = [asyncio.create_task(worker(kv)) for _ in range(conns_per_server * cfg.n)]
         interval = 1.0 / rate
@@ -176,7 +221,9 @@ async def run(cfg: ClusterConfig, rate: int, seconds: float, n_keys: int = 100_0
             q.put_nowait(None)
         await asyncio.gather(*workers)
         elapsed = time.perf_counter() - start
-    return Report(latencies=latencies, seconds=elapsed, errors=errors, error_counts=error_counts)
+    return Report(latencies=latencies, seconds=elapsed, errors=errors, error_counts=error_counts,
+                  get_hits=get_hits, get_not_found=get_not_found,
+                  prefill_keys=n_keys if prefill else 0, prefill_seconds=prefill_seconds if prefill else 0.0)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -189,11 +236,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--conns", type=int, default=32, help="keep-alive connections per server")
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--out", default=None, help="CSV path")
+    p.add_argument("--no-prefill", action="store_true",
+                   help="skip writing every key before the timed run")
     a = p.parse_args(argv)
     cfg = load_config(a.config)
     print(f"kvbench: {cfg.n} server(s), {a.rate} ops/s for {a.seconds:.0f}s, 80/15/5, "
-          f"{a.keys} keys, {a.value_size} B values, {a.conns} conns/server", file=sys.stderr, flush=True)
-    rep = asyncio.run(run(cfg, a.rate, a.seconds, a.keys, a.value_size, a.conns, a.seed))
+          f"{a.keys} keys, {a.value_size} B values, {a.conns} conns/server, "
+          f"prefill {'off' if a.no_prefill else 'on'}", file=sys.stderr, flush=True)
+    rep = asyncio.run(run(cfg, a.rate, a.seconds, a.keys, a.value_size, a.conns, a.seed,
+                          prefill=not a.no_prefill))
     print(rep.to_text())
     if a.out:
         os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)

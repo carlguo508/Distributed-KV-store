@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KV Store v1</title>
+<style>
+:root{
+  --bg:#ecebe6; --stage:#faf9f6; --card:#ffffff; --ink:#1c1c1a; --muted:#6e6d66; --line:#e2e0d8;
+  --accent:#c2410c; --accent-soft:#fdf0e8;
+  --pro:#15803d; --pro-soft:#eaf6ee; --con:#b91c1c; --con-soft:#fbecec;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f0f0e; --stage:#181816; --card:#211f1d; --ink:#ecebe6; --muted:#9d9b93; --line:#34322e;
+    --accent:#fb923c; --accent-soft:#3a2416; --pro:#4ade80; --pro-soft:#15291c; --con:#f87171; --con-soft:#2e1717;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f0f0e; --stage:#181816; --card:#211f1d; --ink:#ecebe6; --muted:#9d9b93; --line:#34322e;
+  --accent:#fb923c; --accent-soft:#3a2416; --pro:#4ade80; --pro-soft:#15291c; --con:#f87171; --con-soft:#2e1717;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);overflow:hidden}
+/* Fixed 1280x720 canvas, scaled to fit the window */
+.stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;background:var(--stage);
+  transform:translate(-50%,-50%) scale(var(--s,1));border-radius:6px;box-shadow:0 6px 30px rgba(0,0,0,.08);overflow:hidden}
+.slide{position:absolute;inset:0;padding:40px 64px 48px;display:none;flex-direction:column;justify-content:center;font-size:22px;line-height:1.45}
+.slide.on{display:flex}
+.kicker{font-family:var(--mono);font-size:15px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+h1{font-size:54px;line-height:1.08;letter-spacing:-.02em}
+h2{font-size:42px;line-height:1.12;letter-spacing:-.015em;margin-bottom:30px}
+h3{font-size:22px;margin-bottom:10px}
+.body{display:flex;flex-direction:column;gap:26px}
+.muted{color:var(--muted)}
+.small{font-size:17px}
+code,.mono{font-family:var(--mono);font-size:.88em}
+.grid{display:grid;gap:22px}
+.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 26px}
+ul.plain{list-style:none}
+ul.plain li{margin:5px 0}
+/* Trade-off option cards */
+.opt{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px 26px;display:flex;flex-direction:column;gap:13px}
+.opt .name{font-weight:650;font-size:24px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.opt.no{opacity:.62}
+.opt.pick{border:2px solid var(--accent);background:linear-gradient(var(--accent-soft),var(--card) 55%)}
+.badge{font-family:var(--mono);font-size:12px;letter-spacing:.08em;padding:3px 8px;border-radius:20px;background:var(--accent);color:#fff;white-space:nowrap}
+.badge.ai{background:none;border:1px solid var(--muted);color:var(--muted)}
+.p,.c{font-size:20px;padding-left:28px;position:relative}
+.p::before,.c::before{position:absolute;left:0;top:0;font-weight:700;font-family:var(--mono)}
+.p::before{content:"+";color:var(--pro)}
+.c::before{content:"−";color:var(--con)}
+.metric{margin-top:auto;font-family:var(--mono);font-size:18px;padding:8px 12px;border-radius:6px}
+.metric.good{background:var(--pro-soft);color:var(--pro)}
+.metric.bad{background:var(--con-soft);color:var(--con)}
+.metric.neutral{background:var(--line);color:var(--muted)}
+.why{border-left:4px solid var(--accent);padding:8px 16px;background:var(--card);border-radius:0 8px 8px 0;font-size:20px}
+.why b{color:var(--accent)}
+/* chips */
+.chip{display:inline-block;border-radius:6px;padding:6px 13px;font-size:19px;margin:3px 4px 3px 0}
+.chip.yes{background:var(--pro-soft);color:var(--pro);font-weight:600}
+.chip.yes::before{content:"✓ "}
+.chip.nope{background:var(--con-soft);color:var(--con)}
+.chip.nope::before{content:"✗ "}
+.chip.grey{background:var(--line);color:var(--muted)}
+/* tables */
+table{border-collapse:collapse;width:100%;font-size:20px}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--muted);font-size:14px;text-transform:uppercase;letter-spacing:.05em}
+td.num,th.num{text-align:right;font-family:var(--mono)}
+.good{color:var(--pro)}.bad{color:var(--con)}
+/* bars */
+.barrow{display:grid;grid-template-columns:170px 1fr 95px;align-items:center;gap:14px;margin:14px 0;font-size:19px}
+.track{background:var(--line);border-radius:4px;height:20px;overflow:hidden}
+.bar{height:100%;border-radius:4px}
+.bar.bad{background:var(--con)}.bar.good{background:var(--pro)}
+/* flow */
+.flow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:19px}
+.flow .step{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 15px}
+.flow .arr{color:var(--muted)}
+.stat{font-family:var(--mono);font-size:48px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+.stat small{font-size:17px;font-weight:500;color:var(--muted)}
+svg text{font-family:var(--sans)}
+.foot{position:absolute;left:64px;right:64px;bottom:16px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.progress{position:absolute;top:0;left:0;height:4px;background:var(--accent);transition:width .2s}
+.nav{position:fixed;bottom:10px;right:14px;display:flex;gap:6px}
+.nav button{background:var(--stage);border:1px solid var(--line);color:var(--ink);border-radius:6px;width:34px;height:30px;cursor:pointer;font:inherit}
+.nav button:hover{border-color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+<div class="progress" id="progress"></div>
+
+<!-- 1 Title -->
+<section class="slide">
+  <div class="body" style="gap:28px">
+    <div class="kicker">Take-home · v1</div>
+    <h1>A distributed key-value store<br>in Python, built in one day</h1>
+    <p class="muted" style="font-size:22px">1–4 hash-partitioned servers · SQLite + full fsync · group commit · ack only when on disk</p>
+    <div class="flow">
+      <span class="step">Requirements</span><span class="arr">→</span><span class="step">Architecture</span><span class="arr">→</span>
+      <span class="step">Request flows</span><span class="arr">→</span><span class="step">Linearizability</span><span class="arr">→</span>
+      <span class="step">How it was designed</span><span class="arr">→</span><span class="step">Results</span>
+    </div>
+  </div>
+</section>
+
+<!-- 2 Requirements -->
+<section class="slide">
+  <div class="kicker">01 · Requirements</div>
+  <h2>A shared, durable store for small service state</h2>
+  <div class="body">
+    <div class="grid g3">
+      <div class="card">
+        <h3>Operations</h3>
+        <ul class="plain small">
+          <li><code>Put(k,v)</code> ack once durable</li>
+          <li><code>Get(k)</code> value or <code>NotFound</code></li>
+          <li><code>Delete(k)</code> absent key is OK</li>
+          <li>Opaque bytes · empty ≠ missing</li>
+        </ul>
+      </div>
+      <div class="opt pick">
+        <div class="name">Mandatory <span class="badge">V1</span></div>
+        <div class="p">Per-key linearizability</div>
+        <div class="p">Survive process restart</div>
+        <div class="p">1K ops/s · 80% reads</div>
+        <div class="p">p99 read &lt; 50 ms · write &lt; 100 ms</div>
+      </div>
+      <div class="opt no">
+        <div class="name">Optional <span class="badge ai">DEFERRED</span></div>
+        <div class="c">Survive losing a server + disk</div>
+        <div class="c">Failover availability</div>
+        <div class="c">No stale reads under partition</div>
+      </div>
+    </div>
+    <div>
+      <span class="chip grey">1–4 static servers</span><span class="chip grey">one machine</span>
+      <span class="chip grey">key ≤ 256 B</span><span class="chip grey">value ≤ 64 KiB</span>
+      <span class="chip grey">Python</span><span class="chip grey">no replication</span><span class="chip grey">data fits in RAM</span><span class="chip grey">1 day</span>
+    </div>
+  </div>
+</section>
+
+<!-- 10 Architecture -->
+<section class="slide">
+  <div class="kicker">02 · Architecture</div>
+  <h2>Architecture</h2>
+  <div class="body">
+    <svg viewBox="0 0 960 330" style="width:100%;height:400px" role="img" aria-label="Architecture diagram">
+      <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--muted)"/></marker></defs>
+      <g stroke="var(--line)" stroke-width="1.5" fill="var(--card)">
+        <rect x="10" y="110" width="170" height="110" rx="10"/>
+        <rect x="250" y="20" width="700" height="290" rx="12" fill="none" stroke-dasharray="5 5"/>
+        <rect x="275" y="130" width="150" height="70" rx="8"/>
+        <rect x="490" y="50" width="190" height="60" rx="8" stroke="var(--pro)"/>
+        <rect x="490" y="215" width="150" height="60" rx="8"/>
+        <rect x="700" y="215" width="220" height="60" rx="8" stroke="var(--accent)" stroke-width="2"/>
+        <rect x="740" y="50" width="180" height="60" rx="8"/>
+      </g>
+      <g fill="var(--ink)">
+        <text x="95" y="150" text-anchor="middle" font-weight="600">Client library</text>
+        <text x="350" y="160" text-anchor="middle" font-weight="600">aiohttp</text>
+        <text x="585" y="77" text-anchor="middle" font-weight="600">in-memory dict</text>
+        <text x="565" y="250" text-anchor="middle" font-weight="600">write queue</text>
+        <text x="810" y="242" text-anchor="middle" font-weight="600">writer thread</text>
+        <text x="830" y="77" text-anchor="middle" font-weight="600">SQLite WAL</text>
+      </g>
+      <g fill="var(--muted)" font-size="13">
+        <text x="95" y="175" text-anchor="middle">md5(key) % N</text>
+        <text x="95" y="196" text-anchor="middle">keep-alive pool</text>
+        <text x="270" y="44">Server i · one asyncio process (× N)</text>
+        <text x="350" y="182" text-anchor="middle">handlers</text>
+        <text x="585" y="98" text-anchor="middle">= committed state</text>
+        <text x="810" y="262" text-anchor="middle">BEGIN · ≤256 rows · COMMIT</text>
+        <text x="830" y="98" text-anchor="middle">fullfsync=ON</text>
+        <text x="440" y="110">GET</text>
+        <text x="455" y="240" text-anchor="end">PUT/DEL</text>
+      </g>
+      <g stroke="var(--muted)" stroke-width="1.6" fill="none" marker-end="url(#a)">
+        <path d="M180,165H272"/><path d="M425,150L488,90"/><path d="M425,180L488,240"/>
+        <path d="M640,245H698"/><path d="M830,213V113"/><path d="M740,213L670,113"/>
+      </g>
+      <text x="842" y="170" font-size="14" font-weight="600" fill="var(--accent)">① commit</text>
+      <text x="620" y="170" font-size="14" font-weight="600" fill="var(--pro)">② apply</text>
+    </svg>
+    <div class="why">GET never touches SQLite. Only the writer thread writes the DB and mutates the dict, <b>after</b> COMMIT.</div>
+  </div>
+</section>
+
+<!-- 11 Put flow -->
+<section class="slide">
+  <div class="kicker">03 · Request flow · Put / Delete</div>
+  <h2 style="margin-bottom:14px">Put: ack only after COMMIT and apply</h2>
+  <svg viewBox="0 0 1152 470" style="width:100%;height:480px" role="img" aria-label="Put sequence diagram">
+    <defs><marker id="sq" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--muted)"/></marker></defs>
+    <g stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 5">
+      <path d="M70,40V465"/><path d="M270,40V465"/><path d="M470,40V465"/><path d="M670,40V465"/><path d="M870,40V465"/><path d="M1070,40V465"/>
+    </g>
+    <g stroke="var(--line)" stroke-width="1.5" fill="var(--card)">
+      <rect x="5" y="4" width="130" height="36" rx="7"/><rect x="195" y="4" width="150" height="36" rx="7"/>
+      <rect x="405" y="4" width="130" height="36" rx="7"/><rect x="595" y="4" width="150" height="36" rx="7" stroke="var(--accent)"/>
+      <rect x="805" y="4" width="130" height="36" rx="7"/><rect x="1000" y="4" width="140" height="36" rx="7" stroke="var(--pro)"/>
+    </g>
+    <g font-size="16" font-weight="600" text-anchor="middle" fill="var(--ink)">
+      <text x="70" y="28">Client lib</text><text x="270" y="28">Handler (loop)</text><text x="470" y="28">Write queue</text>
+      <text x="670" y="28">Writer thread</text><text x="870" y="28">SQLite</text><text x="1070" y="28">Dict</text>
+    </g>
+    <!-- alt boxes -->
+    <rect x="40" y="268" width="1100" height="118" rx="6" fill="var(--pro-soft)" opacity=".7"/>
+    <rect x="40" y="392" width="1100" height="72" rx="6" fill="var(--con-soft)" opacity=".8"/>
+    <text x="50" y="286" font-size="13" font-weight="700" fill="var(--pro)">COMMIT OK</text>
+    <text x="50" y="410" font-size="13" font-weight="700" fill="var(--con)">COMMIT FAILS</text>
+    <g stroke="var(--muted)" stroke-width="1.6" fill="none" marker-end="url(#sq)">
+      <path d="M70,72H266"/>
+      <path d="M270,138H466"/>
+      <path d="M666,190H474"/>
+      <path d="M670,232H866"/>
+      <path d="M670,306H1066"/>
+      <path d="M666,336H274"/>
+      <path d="M266,368H74"/>
+      <path d="M666,430H274"/>
+      <path d="M266,452H74"/>
+    </g>
+    <g font-size="15" fill="var(--ink)">
+      <text x="80" y="64">PUT /keys/{b64url} · body = value</text>
+      <text x="280" y="98" fill="var(--muted)">decode key · check size · check owner</text>
+      <text x="280" y="130">enqueue (put, k, v, future)</text>
+      <text x="280" y="160" fill="var(--muted)">await future · loop keeps serving GETs</text>
+      <text x="480" y="182">drain ≤ 256 records</text>
+      <text x="680" y="224">BEGIN · INSERT OR REPLACE × batch · COMMIT</text>
+      <text x="880" y="254" fill="var(--accent)" font-weight="600">F_FULLFSYNC of the WAL</text>
+      <text x="680" y="298" fill="var(--pro)" font-weight="600">① apply batch in queue order</text>
+      <text x="280" y="328">② resolve futures (call_soon_threadsafe)</text>
+      <text x="80" y="360" fill="var(--pro)" font-weight="700">③ 200</text>
+      <text x="280" y="422">fail every future in the batch · nothing applied</text>
+      <text x="80" y="444" fill="var(--con)" font-weight="700">500</text>
+      <text x="680" y="454" fill="var(--con)">then os._exit(1)</text>
+    </g>
+  </svg>
+  <p class="muted small" style="margin-top:6px">Delete is the same record type: <code>DELETE FROM kv</code> + <code>dict.pop</code>. Deleting an absent key still goes through a batch, so its 200 means the same thing.</p>
+</section>
+
+<!-- 12 Get flow -->
+<section class="slide">
+  <div class="kicker">04 · Request flow · Get</div>
+  <h2>Get: a dict lookup, never touches SQLite</h2>
+  <div class="grid" style="grid-template-columns:1.05fr 1fr;gap:36px;align-items:center">
+    <svg viewBox="0 0 560 340" style="width:100%" role="img" aria-label="Get sequence diagram">
+      <defs><marker id="sg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--muted)"/></marker></defs>
+      <g stroke="var(--line)" stroke-width="1.5" stroke-dasharray="4 5"><path d="M70,40V335"/><path d="M280,40V335"/><path d="M490,40V335"/></g>
+      <g stroke="var(--line)" stroke-width="1.5" fill="var(--card)">
+        <rect x="5" y="4" width="130" height="36" rx="7"/><rect x="205" y="4" width="150" height="36" rx="7"/><rect x="425" y="4" width="130" height="36" rx="7" stroke="var(--pro)"/>
+      </g>
+      <g font-size="16" font-weight="600" text-anchor="middle" fill="var(--ink)"><text x="70" y="28">Client lib</text><text x="280" y="28">Handler</text><text x="490" y="28">Dict</text></g>
+      <rect x="30" y="190" width="525" height="62" rx="6" fill="var(--pro-soft)" opacity=".7"/>
+      <rect x="30" y="258" width="525" height="62" rx="6" fill="var(--con-soft)" opacity=".8"/>
+      <text x="40" y="206" font-size="12" font-weight="700" fill="var(--pro)">PRESENT</text>
+      <text x="40" y="274" font-size="12" font-weight="700" fill="var(--con)">ABSENT</text>
+      <g stroke="var(--muted)" stroke-width="1.6" fill="none" marker-end="url(#sg)">
+        <path d="M70,82H276"/><path d="M280,160H486"/><path d="M276,236H74"/><path d="M276,304H74"/>
+      </g>
+      <g font-size="15" fill="var(--ink)">
+        <text x="80" y="74">GET /keys/{b64url}</text>
+        <text x="290" y="118" fill="var(--muted)">decode · check owner</text>
+        <text x="290" y="152">dict.get(key)</text>
+        <text x="80" y="228" fill="var(--pro)" font-weight="600">200 + value (empty ok)</text>
+        <text x="80" y="296" fill="var(--con)" font-weight="600">404 NotFound</text>
+      </g>
+    </svg>
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="card"><h3>Why this is safe</h3>
+        <div class="p">Dict holds only committed values</div>
+        <div class="p">Queued or uncommitted writes are invisible</div>
+        <div class="p">No lock: the writer only swaps whole values</div>
+      </div>
+      <div class="card"><h3>Why this is fast</h3>
+        <div class="p">No disk, no writer thread on the read path</div>
+        <div class="metric good" style="margin-top:10px">Get p99 ≈ 1.2 ms at 1K ops/s</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 Linearizability guarantee -->
+<section class="slide">
+  <div class="kicker">05 · Per-key linearizability</div>
+  <h2 style="margin-bottom:18px">Every key behaves like one copy, in real-time order</h2>
+  <div class="body" style="gap:18px">
+    <div>
+      <span class="chip yes">single writer thread</span><span class="chip yes">FIFO write queue</span><span class="chip yes">apply after commit</span><span class="chip grey">no application locks</span>
+    </div>
+    <svg viewBox="0 0 1152 250" style="width:100%;height:270px" role="img" aria-label="Timeline: overlapping vs later reads">
+      <defs><marker id="tl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--muted)"/></marker></defs>
+      <path d="M190,232H1140" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#tl)"/>
+      <text x="1140" y="250" font-size="13" text-anchor="end" fill="var(--muted)">time</text>
+      <path d="M560,14V226" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 4"/>
+      <text x="566" y="226" font-size="13" fill="var(--accent)" font-weight="600">COMMIT + apply</text>
+      <g font-size="16" fill="var(--ink)" font-weight="600">
+        <text x="0" y="42">A · Put(k, v2)</text><text x="0" y="102">B · Get(k)</text><text x="0" y="162">C · Get(k)</text><text x="0" y="212">D · Get(k)</text>
+      </g>
+      <rect x="200" y="22" width="420" height="30" rx="6" fill="var(--accent-soft)" stroke="var(--accent)"/>
+      <text x="630" y="43" font-size="15" fill="var(--pro)" font-weight="700">200</text>
+      <rect x="470" y="82" width="170" height="30" rx="6" fill="var(--card)" stroke="var(--muted)"/>
+      <text x="655" y="103" font-size="15" fill="var(--pro)" font-weight="600">v1 or v2 · overlaps the commit, either is valid</text>
+      <rect x="680" y="142" width="120" height="30" rx="6" fill="var(--card)" stroke="var(--muted)"/>
+      <text x="815" y="163" font-size="15" fill="var(--pro)" font-weight="600">v2 only, starts after the 200</text>
+      <rect x="860" y="192" width="120" height="30" rx="6" fill="var(--card)" stroke="var(--muted)"/>
+      <text x="995" y="213" font-size="15" fill="var(--con)" font-weight="600">never v1 again</text>
+      <text x="0" y="62" font-size="13" fill="var(--muted)">k = v1 before</text>
+    </svg>
+    <div class="why">Linearizable = each op appears to take effect at one instant inside its call. Here that instant is <b>the dict apply after COMMIT</b>. No ordering across keys is promised, and none is needed.</div>
+  </div>
+</section>
+
+<!-- 14 Scenarios 1 -->
+<section class="slide">
+  <div class="kicker">06 · Per-key linearizability · scenarios 1/2</div>
+  <h2 style="margin-bottom:18px">Sequential and concurrent operations on one key</h2>
+  <table style="font-size:18px">
+    <tr><th style="width:24%">Scenario</th><th style="width:30%">What happens</th><th>Why it is correct</th></tr>
+    <tr><td><b>Put → 200 → Get</b></td><td class="good">Returns that value or a later one</td><td>The 200 is sent only after COMMIT and the dict apply; any Get that starts later reads the updated dict</td></tr>
+    <tr><td><b>Delete → 200 → Get</b></td><td class="good">404, unless a later Put recreated it</td><td>Same path: the key is popped from the dict before the 200 is sent</td></tr>
+    <tr><td><b>Put ‖ Put</b> on one key</td><td>Both get 200; the one later in the queue wins</td><td>FIFO drain into one transaction, applied in the same order, so last SQL row = last dict write = last ack. Overlapping ops may be ordered either way</td></tr>
+    <tr><td><b>Put ‖ Delete</b> on one key</td><td>Both get 200; the one later in the queue wins</td><td>Delete is an ordinary record in the batch, not a special case</td></tr>
+  </table>
+</section>
+
+<!-- 15 Scenarios 2 -->
+<section class="slide">
+  <div class="kicker">07 · Per-key linearizability · scenarios 2/2</div>
+  <h2 style="margin-bottom:18px">Overlapping reads, crashes and failed commits</h2>
+  <table style="font-size:18px">
+    <tr><th style="width:24%">Scenario</th><th style="width:30%">What happens</th><th>Why it is correct</th></tr>
+    <tr><td><b>Get during an in-flight Put</b></td><td>Old or new value, never torn or uncommitted</td><td>The ops overlap, so either order is a valid linearization; the dict swaps whole committed values only</td></tr>
+    <tr><td><b>Reads never go backwards</b></td><td class="good">Once anyone sees v, later reads see v or newer</td><td>Only the writer mutates the dict, in queue order, and never rolls back. Visible ⇒ committed ⇒ survives a crash</td></tr>
+    <tr><td><b>Acked write, then SIGKILL / restart</b></td><td class="good">Get returns the acked value (or a later one)</td><td>The 200 required a COMMIT with the WAL fsynced. Startup replays the WAL and loads the dict before opening the port. Queued writes are lost, but no client got a 200 for them</td></tr>
+    <tr><td><b>COMMIT fails</b></td><td class="bad">Whole batch → 500, nothing visible, process exits</td><td>Apply runs only on success. Exiting stops a later batch from committing on top of uncertain disk state; restart reloads the last good commit</td></tr>
+  </table>
+  <p class="muted small" style="margin-top:14px">Not promised: order across different keys. They may live on different servers and commit independently, which the prompt allows.</p>
+</section>
+
+<!-- 3 Ambiguities -->
+<section class="slide">
+  <div class="kicker">08 · How it was designed · ambiguities</div>
+  <h2>What the prompt leaves open → my choice</h2>
+  <div class="body">
+    <table>
+      <tr><th style="width:44px">#</th><th style="width:44%">Open question</th><th>Choice</th></tr>
+      <tr><td class="mono">A1</td><td>“1–4 servers” without replication?</td><td><b>Hash-partition</b>, one owner per key</td></tr>
+      <tr><td class="mono">A2</td><td>“Durable” on one node?</td><td><b>fsync before every ack</b>, no weaker mode</td></tr>
+      <tr><td class="mono">A3</td><td>Dataset size?</td><td>Fits in RAM, still persisted</td></tr>
+      <tr><td class="mono">A4</td><td>Where to measure latency?</td><td>Client side, from scheduled send time</td></tr>
+      <tr><td class="mono">A5</td><td>Load model?</td><td>Open loop · uniform 100K keys · 80/15/5</td></tr>
+      <tr><td class="mono">A6</td><td>Retry a timed-out Put?</td><td>Yes, Put/Delete are idempotent</td></tr>
+      <tr><td class="mono">A7</td><td>Concurrent writes, one key?</td><td>Last writer wins, no CAS</td></tr>
+      <tr><td class="mono">A8</td><td>Prove restart recovery?</td><td>SIGKILL under load, verify every ack</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 4 Spike -->
+<section class="slide">
+  <div class="kicker">09 · Feasibility spike</div>
+  <h2>Can Python fsync every write and hit p99?</h2>
+  <div class="body">
+    <div class="grid g2">
+      <div class="card">
+        <h3><code>os.fsync</code> lies on macOS</h3>
+        <div class="barrow"><span>os.fsync</span><div class="track"><div class="bar bad" style="width:1.5%"></div></div><span class="mono bad">0.02 ms</span></div>
+        <div class="barrow"><span>F_FULLFSYNC</span><div class="track"><div class="bar good" style="width:100%"></div></div><span class="mono">4.05 ms</span></div>
+        <p class="muted small">Only reaches the drive cache. Real flush ≈ 4 ms.</p>
+      </div>
+      <div class="card">
+        <h3>Batching is required</h3>
+        <div class="barrow"><span>per-write fsync</span><div class="track"><div class="bar bad" style="width:100%"></div></div><span class="mono bad">56 ms</span></div>
+        <div class="barrow"><span>group commit</span><div class="track"><div class="bar good" style="width:20%"></div></div><span class="mono good">11 ms</span></div>
+        <p class="muted small">Put p99 at 1K ops/s, one server.</p>
+      </div>
+    </div>
+    <div class="why"><b>Yes</b>, with group commit and the flush off the event loop. ~15–20% CPU → one asyncio process per server.</div>
+  </div>
+</section>
+
+<!-- 5 Durability -->
+<section class="slide">
+  <div class="kicker">10 · Trade-off · durability</div>
+  <h2>When is a write safe to acknowledge?</h2>
+  <div class="body">
+    <div class="grid g3">
+      <div class="opt no">
+        <div class="name">No fsync</div>
+        <div class="p">Fastest</div>
+        <div class="c">Lost on power failure</div>
+        <div class="metric neutral">ruled out</div>
+      </div>
+      <div class="opt no">
+        <div class="name">fsync per write</div>
+        <div class="p">Durable</div>
+        <div class="c">4 ms flushes run one by one</div>
+        <div class="metric bad">put p99 56 ms</div>
+      </div>
+      <div class="opt pick">
+        <div class="name">Group commit <span class="badge">CHOSEN</span></div>
+        <div class="p">Durable</div>
+        <div class="p">One fsync per batch</div>
+        <div class="c">A few ms of queueing</div>
+        <div class="metric good">put p99 11 ms</div>
+      </div>
+    </div>
+    <div class="why"><b>Why:</b> without replication, “durable” means on disk. Batching keeps the guarantee and wins back the latency.</div>
+  </div>
+</section>
+
+<!-- 6 Visibility -->
+<section class="slide">
+  <div class="kicker">11 · Trade-off · visibility</div>
+  <h2>When may a Get see a new value?</h2>
+  <div class="body">
+    <div class="grid g3">
+      <div class="opt no">
+        <div class="name">Apply early</div>
+        <div class="p">Zero cost</div>
+        <div class="c">Readers can see a value that a crash erases</div>
+        <div class="metric bad">breaks linearizability</div>
+      </div>
+      <div class="opt no">
+        <div class="name">Apply early, reads wait</div>
+        <div class="p">Correct</div>
+        <div class="c">Per-key offset tracking</div>
+        <div class="c">Hot reads wait for flush</div>
+        <div class="metric neutral">more code</div>
+      </div>
+      <div class="opt pick">
+        <div class="name">Apply after commit <span class="badge">CHOSEN</span></div>
+        <div class="p">Memory = committed disk</div>
+        <div class="p">Same shape as Raft apply</div>
+        <div class="metric good">no measurable cost</div>
+      </div>
+    </div>
+    <div class="why"><b>Caught in the spike:</b> it updated memory <i>before</i> fsync. Fixed with one invariant that is easy to test.</div>
+  </div>
+</section>
+
+<!-- 7 Protocol -->
+<section class="slide">
+  <div class="kicker">12 · Trade-off · wire protocol</div>
+  <h2>How do clients talk to servers?</h2>
+  <div class="body">
+    <div class="grid g3">
+      <div class="opt no">
+        <div class="name">Binary over TCP <span class="badge ai">AI PICK</span></div>
+        <div class="p">Smallest, no encoding</div>
+        <div class="c">No curl</div>
+        <div class="c">Own framing = bug surface</div>
+      </div>
+      <div class="opt pick">
+        <div class="name">HTTP/1.1 <span class="badge">CHOSEN</span></div>
+        <div class="p">Debug with curl</div>
+        <div class="p">PUT / GET / DELETE map 1:1</div>
+        <div class="c">Key must be base64url</div>
+        <div class="metric good">same p99 as raw TCP</div>
+      </div>
+      <div class="opt no">
+        <div class="name">gRPC</div>
+        <div class="p">Typed schema</div>
+        <div class="c">Codegen, heavy for one day</div>
+      </div>
+    </div>
+    <div class="why"><b>Override, then measure:</b> aiohttp prototype matched the TCP spike. Value is the raw body; missing key → 404.</div>
+  </div>
+</section>
+
+<!-- 8 Storage -->
+<section class="slide">
+  <div class="kicker">13 · Trade-off · storage</div>
+  <h2>What sits on disk?</h2>
+  <div class="body">
+    <div class="grid g3">
+      <div class="opt no">
+        <div class="name">Own log <span class="badge ai">AI PICK</span></div>
+        <div class="p">Full control of fsync</div>
+        <div class="c">Write replay, CRC, compaction myself</div>
+      </div>
+      <div class="opt pick">
+        <div class="name">SQLite WAL <span class="badge">CHOSEN</span></div>
+        <div class="p">Crash recovery built in</div>
+        <div class="p">Space reuse built in</div>
+        <div class="c">Needs <code>fullfsync=ON</code> on macOS</div>
+        <div class="metric good">batched: 0.3 ms/row</div>
+      </div>
+      <div class="opt no">
+        <div class="name">LMDB</div>
+        <div class="p">Fast reads</div>
+        <div class="c">Native dependency</div>
+        <div class="c">Same batching needed</div>
+      </div>
+    </div>
+    <div class="why"><b>Less code to get right in a day.</b> End to end with aiohttp: put p99 11 ms (N=1), 18 ms (N=3).</div>
+  </div>
+</section>
+
+<!-- 9 Routing / runtime / failure -->
+<section class="slide">
+  <div class="kicker">14 · Trade-off · the rest</div>
+  <h2>Simplest option wins for a static 1–4 node cluster</h2>
+  <div class="body">
+    <table>
+      <tr><th style="width:150px">Topic</th><th>Chosen</th><th>Rejected</th></tr>
+      <tr><td><b>Routing</b></td><td><span class="chip yes">client md5(key) % N</span><div class="small muted">wrong server → 421</div></td>
+        <td><span class="chip nope">server forwards · extra hop</span><span class="chip nope">router · hop + SPOF</span></td></tr>
+      <tr><td><b>Runtime</b></td><td><span class="chip yes">asyncio + 1 writer thread</span><div class="small muted">ordered without locks</div></td>
+        <td><span class="chip nope">threads · GIL + locks</span><span class="chip nope">multiprocess · shared state</span></td></tr>
+      <tr><td><b>On commit error</b></td><td><span class="chip yes">fail-stop</span><div class="small muted">500, apply nothing, exit</div></td>
+        <td><span class="chip nope">keep running on uncertain disk</span></td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 12 Implementation -->
+<section class="slide">
+  <div class="kicker">15 · Implementation</div>
+  <h2>~740 lines of code · ~1,100 lines of tests</h2>
+  <div class="body">
+    <div class="grid g2" style="grid-template-columns:1.1fr 1fr;gap:32px">
+      <table>
+        <tr><th>Module</th><th>Role</th><th class="num">LOC</th></tr>
+        <tr><td><code>storage.py</code></td><td>writer, batching, fail-stop</td><td class="num">227</td></tr>
+        <tr><td><code>bench.py</code></td><td>open-loop load generator</td><td class="num">208</td></tr>
+        <tr><td><code>server.py</code></td><td>aiohttp handlers</td><td class="num">119</td></tr>
+        <tr><td><code>client.py</code></td><td>routing client</td><td class="num">78</td></tr>
+        <tr><td><code>config.py</code></td><td>cluster.json, owner_of</td><td class="num">60</td></tr>
+        <tr><td><code>keycodec.py</code></td><td>base64url, limits</td><td class="num">46</td></tr>
+      </table>
+      <div>
+        <h3 style="margin-bottom:12px">Built with Claude Code</h3>
+        <div class="flow" style="flex-direction:column;align-items:stretch;gap:8px">
+          <span class="step"><b>1</b> · requirements: AI lists options, I decide</span>
+          <span class="step"><b>2</b> · spikes: measure before choosing</span>
+          <span class="step"><b>3</b> · design doc: diagrams, API, recovery</span>
+          <span class="step"><b>4</b> · TDD task by task, I approve commits</span>
+          <span class="step"><b>5</b> · independent review: 10 defects fixed</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 Results -->
+<section class="slide">
+  <div class="kicker">16 · Results</div>
+  <h2>Targets met with wide margin</h2>
+  <div class="body">
+    <div class="grid g4">
+      <div class="card"><div class="muted small">Get p99 · N=3</div><div class="stat good">1.2<small> ms</small></div><div class="muted small">target &lt; 50</div></div>
+      <div class="card"><div class="muted small">Put p99 · N=3</div><div class="stat good">21.7<small> ms</small></div><div class="muted small">target &lt; 100</div></div>
+      <div class="card"><div class="muted small">Errors</div><div class="stat">0</div><div class="muted small">60 s at 1K ops/s</div></div>
+      <div class="card"><div class="muted small">Restart test</div><div class="stat good">PASS</div><div class="muted small">SIGKILL under load</div></div>
+    </div>
+    <table>
+      <tr><th>Servers</th><th class="num">Get p99</th><th class="num">Put p99</th><th class="num">Delete p99</th><th class="num">Put p99.9</th><th class="num">Errors</th></tr>
+      <tr><td>1</td><td class="num">1.63</td><td class="num">24.14</td><td class="num">20.63</td><td class="num">57.94</td><td class="num">0</td></tr>
+      <tr><td>3</td><td class="num">1.22</td><td class="num">21.68</td><td class="num">17.71</td><td class="num">47.68</td><td class="num">0</td></tr>
+    </table>
+    <p class="muted small">ms · M2 Pro, everything on one machine. SIGKILL proves acks follow the commit; power-loss safety rests on the fullfsync startup check.</p>
+  </div>
+</section>
+
+<!-- 14 Next -->
+<section class="slide">
+  <div class="kicker">17 · Next</div>
+  <h2>Limits of v1 → path to v2</h2>
+  <div class="body">
+    <div class="grid g2">
+      <div class="opt no" style="opacity:1">
+        <div class="name">v1 limits</div>
+        <div class="c">Lost disk = lost keys</div>
+        <div class="c">No failover</div>
+        <div class="c">No write backpressure</div>
+        <div class="c">Static N, no rebalancing</div>
+      </div>
+      <div class="opt pick">
+        <div class="name">v2 · replication</div>
+        <div class="p">Raft per partition</div>
+        <div class="p">Apply-on-commit already fits</div>
+        <div class="p">Read index / lease reads</div>
+        <div class="p">Failure detection, replace server</div>
+      </div>
+    </div>
+    <p style="font-size:24px;text-align:center;margin-top:10px">Thank you · Questions?</p>
+  </div>
+</section>
+
+<div class="foot"><span>KV Store v1</span><span id="count"></span></div>
+</div>
+<div class="nav"><button id="prev" aria-label="Previous slide">←</button><button id="next" aria-label="Next slide">→</button></div>
+<script>
+(function(){
+  var stage=document.getElementById('stage');
+  function fit(){stage.style.setProperty('--s',Math.min(innerWidth/1280,(innerHeight-8)/720)*0.98)}
+  addEventListener('resize',fit);fit();
+  var slides=[].slice.call(document.querySelectorAll('.slide')),i=0;
+  function show(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach(function(s,k){s.classList.toggle('on',k===i)});
+    document.getElementById('count').textContent=(i+1)+' / '+slides.length;
+    document.getElementById('progress').style.width=((i+1)/slides.length*100)+'%';
+    try{history.replaceState(null,'','#'+(i+1))}catch(e){}
+  }
+  document.getElementById('prev').onclick=function(){show(i-1)};
+  document.getElementById('next').onclick=function(){show(i+1)};
+  document.addEventListener('keydown',function(e){
+    if(['ArrowRight','ArrowDown','PageDown',' ','Enter'].indexOf(e.key)>=0){e.preventDefault();show(i+1)}
+    else if(['ArrowLeft','ArrowUp','PageUp','Backspace'].indexOf(e.key)>=0){e.preventDefault();show(i-1)}
+    else if(e.key==='Home')show(0);
+    else if(e.key==='End')show(slides.length-1);
+    else if(e.key==='f'&&document.documentElement.requestFullscreen)document.documentElement.requestFullscreen();
+  });
+  var x0=null;
+  document.addEventListener('touchstart',function(e){x0=e.touches[0].clientX},{passive:true});
+  document.addEventListener('touchend',function(e){
+    if(x0===null)return;var dx=e.changedTouches[0].clientX-x0;
+    if(Math.abs(dx)>50)show(i+(dx<0?1:-1));x0=null;
+  });
+  show((parseInt(location.hash.slice(1),10)||1)-1);
+})();
+</script>
+</body>
+</html>
