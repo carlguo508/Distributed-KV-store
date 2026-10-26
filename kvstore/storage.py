@@ -21,6 +21,17 @@ DELETE = "delete"
 _PRAGMAS = ("journal_mode=WAL", "synchronous=FULL", "fullfsync=ON", "checkpoint_fullfsync=ON")
 # design.md §2: WITHOUT ROWID stores rows in the primary-key B-tree directly, so a
 # lookup by key needs no second index.
+# Checkpointing (spike/checkpoint/README.md). SQLite's default auto-checkpoint runs inside the
+# COMMIT that crosses 1,000 WAL pages, so every write queued behind that COMMIT waits for the copy
+# into kv.db; the spike measured this as the main source of write-tail spikes. Instead:
+#  - a background connection copies WAL pages into kv.db with PASSIVE checkpoints, which never
+#    block the writer;
+#  - PASSIVE alone never resets the WAL under steady writes (a reset needs a moment when every
+#    frame is copied and no write is pending), so the writer bounds it: when the WAL file passes
+#    the limit, it runs a TRUNCATE checkpoint between batches. Most pages were already copied by
+#    the background thread, so this stall is short, and it happens only once per ~limit bytes.
+DEFAULT_CHECKPOINT_INTERVAL = 1.0           # seconds between background PASSIVE checkpoints
+DEFAULT_WAL_LIMIT_BYTES = 64 * 1024 * 1024  # writer truncates the WAL above this size
 _SCHEMA = "CREATE TABLE IF NOT EXISTS kv(k BLOB PRIMARY KEY, v BLOB NOT NULL) WITHOUT ROWID"
 
 
@@ -76,9 +87,14 @@ class Storage:
     # COMMIT and observe fail-stop without killing the test process (design.md §8 Unit).
     def __init__(self, path: str, max_batch: int = 256,
                  connect: Callable[[str], object] = connect,
-                 on_fatal: Callable[[BaseException], None] = _default_on_fatal):
+                 on_fatal: Callable[[BaseException], None] = _default_on_fatal,
+                 checkpoint_interval: float = DEFAULT_CHECKPOINT_INTERVAL,
+                 wal_limit_bytes: int = DEFAULT_WAL_LIMIT_BYTES):
         self.path = path
         self.max_batch = max_batch
+        self.checkpoint_interval = checkpoint_interval
+        self.wal_limit_bytes = wal_limit_bytes
+        self._wal_path = path + "-wal"
         self._connect = connect
         self._on_fatal = on_fatal
         # design.md §2: a full in-memory copy of committed state; reads never touch SQLite.
@@ -88,6 +104,8 @@ class Storage:
         self._queue: queue.Queue = queue.Queue()
         self._conn = None
         self._thread: threading.Thread | None = None
+        self._checkpointer: threading.Thread | None = None
+        self._stop_checkpointer = threading.Event()
 
     # ---- lifecycle -------------------------------------------------------
     def load(self) -> None:
@@ -103,12 +121,18 @@ class Storage:
             conn.close()
 
     def start(self) -> None:
-        """design.md §7 step 3: start the writer, the only user of SQLite from now on."""
+        """design.md §7 step 3: start the writer, plus the background checkpoint thread."""
         self._conn = self._connect(self.path)
+        # The writer never checkpoints inside COMMIT; see the checkpointing note at the top.
+        self._conn.execute("PRAGMA wal_autocheckpoint=0")
         # daemon: on SIGTERM the process may exit without draining the queue; queued
         # writes were never acked, so losing them is allowed (design.md §7 table).
         self._thread = threading.Thread(target=self._run, name="kv-writer", daemon=True)
         self._thread.start()
+        self._stop_checkpointer.clear()
+        self._checkpointer = threading.Thread(target=self._checkpoint_loop, name="kv-checkpoint",
+                                              daemon=True)
+        self._checkpointer.start()
 
     def close(self) -> None:
         if self._thread is not None:
@@ -117,6 +141,10 @@ class Storage:
             self._queue.put(None)
             self._thread.join(timeout=10)
             self._thread = None
+        if self._checkpointer is not None:
+            self._stop_checkpointer.set()
+            self._checkpointer.join(timeout=10)
+            self._checkpointer = None
         if self._conn is not None:
             self._conn.close()
             self._conn = None
@@ -174,8 +202,41 @@ class Storage:
                 batch.append(self._take(item))
             # After a failed commit the writer stops for good, so no later batch can
             # commit on top of uncertain disk state (design.md §4 last row).
-            if not self._commit(batch) or stop:
+            if not self._commit(batch):
                 return
+            # After the batch is acked, so its own requests never wait for this.
+            self._bound_wal()
+            if stop:
+                return
+
+    def _bound_wal(self) -> None:
+        """Run a TRUNCATE checkpoint when the WAL file has grown past the limit. It runs on
+        the writer between batches, so no write is pending and the WAL can be reset. An error
+        propagates to _run and is fatal, like a failed COMMIT (design.md §1 Failure policy)."""
+        try:
+            size = os.path.getsize(self._wal_path)
+        except FileNotFoundError:
+            return
+        if size > self.wal_limit_bytes:
+            # busy=1 means the background PASSIVE checkpoint held the checkpoint lock past the
+            # busy timeout; harmless, the next batch retries.
+            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+
+    # ---- background checkpoint thread --------------------------------------
+    def _checkpoint_loop(self) -> None:
+        """Copy WAL pages into kv.db every checkpoint_interval with PASSIVE checkpoints, which
+        never block the writer. It uses its own connection and holds no read transaction
+        between checkpoints, so it never stops the writer's TRUNCATE from completing."""
+        conn = None
+        try:
+            conn = self._connect(self.path)
+            while not self._stop_checkpointer.wait(self.checkpoint_interval):
+                conn.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()
+        except BaseException as exc:  # noqa: BLE001 - an I/O error while checkpointing is fatal
+            self._on_fatal(exc)
+        finally:
+            if conn is not None:
+                conn.close()
 
     @staticmethod
     def _take(rec: _Record) -> _Record:

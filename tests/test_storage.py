@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import threading
 import time
@@ -270,4 +271,111 @@ def test_unexpected_writer_error_calls_on_fatal(db_path):
     with pytest.raises(RuntimeError, match="unexpected bug"):
         fut.result(timeout=5)
     assert len(fatal) == 1 and isinstance(fatal[0], RuntimeError)
+    s.close()
+
+
+class RecordingConnection:
+    """Wraps a real connection and records every SQL statement, per thread name."""
+
+    def __init__(self, conn, log, fail_on=None):
+        self._conn, self._log, self._fail_on = conn, log, fail_on
+
+    def execute(self, sql, params=()):
+        self._log.append((threading.current_thread().name, sql))
+        if self._fail_on and self._fail_on in sql:
+            raise sqlite3.OperationalError("disk I/O error during checkpoint")
+        return self._conn.execute(sql, params)
+
+    def close(self):
+        self._conn.close()
+
+
+# Checks: the writer never checkpoints inside COMMIT, so a checkpoint cannot stall the batch being
+#   committed (spike/checkpoint findings 2-3).
+# Setup: a storage whose connections record their SQL.
+# Action: start it and commit one put.
+# Expected: the writer connection ran "PRAGMA wal_autocheckpoint=0" before its first BEGIN.
+def test_writer_disables_auto_checkpoint(db_path):
+    log = []
+    s = Storage(db_path, connect=lambda p: RecordingConnection(connect(p), log))
+    s.load()
+    s.start()
+    s.put(b"k", b"v").result(timeout=5)
+    s.close()
+    writer = [sql for name, sql in log if name == "kv-writer" or sql.startswith("PRAGMA wal_auto")]
+    assert "PRAGMA wal_autocheckpoint=0" in writer
+    assert writer.index("PRAGMA wal_autocheckpoint=0") < writer.index("BEGIN")
+
+
+# Checks: a background thread copies WAL pages into kv.db with PASSIVE checkpoints on a fixed
+#   interval, off the write path.
+# Setup: a storage with a 50 ms checkpoint interval and recording connections.
+# Action: commit a put, wait 0.5 s, close.
+# Expected: at least 2 "PRAGMA wal_checkpoint(PASSIVE)" ran, all on the checkpoint thread, none on
+#   the writer thread.
+def test_background_thread_runs_passive_checkpoints(db_path):
+    log = []
+    s = Storage(db_path, connect=lambda p: RecordingConnection(connect(p), log), checkpoint_interval=0.05)
+    s.load()
+    s.start()
+    s.put(b"k", b"v").result(timeout=5)
+    time.sleep(0.5)
+    s.close()
+    passive = [name for name, sql in log if sql == "PRAGMA wal_checkpoint(PASSIVE)"]
+    assert len(passive) >= 2
+    assert set(passive) == {"kv-checkpoint"}
+
+
+# Checks: close() stops the background checkpoint thread.
+# Setup: a started storage with a 50 ms checkpoint interval.
+# Action: close it.
+# Expected: no thread named kv-checkpoint is alive afterwards.
+def test_close_stops_checkpoint_thread(db_path):
+    s = Storage(db_path, checkpoint_interval=0.05)
+    s.load()
+    s.start()
+    s.close()
+    assert not any(t.name == "kv-checkpoint" and t.is_alive() for t in threading.enumerate())
+
+
+# Checks: the WAL is bounded. When it grows past the limit, the writer runs a TRUNCATE checkpoint,
+#   which resets the WAL file; committed data is unaffected.
+# Setup: a storage with a 64 KiB WAL limit and no background checkpoints in practice (60 s
+#   interval), recording connections.
+# Action: commit 200 puts of 1 KiB one at a time, then close and reopen.
+# Expected: the writer ran "PRAGMA wal_checkpoint(TRUNCATE)"; the WAL file ends well under
+#   200 KiB (without the cap it would hold every page written); all 200 keys reload.
+def test_writer_truncates_wal_over_limit(db_path):
+    log = []
+    s = Storage(db_path, connect=lambda p: RecordingConnection(connect(p), log),
+                checkpoint_interval=60, wal_limit_bytes=64 * 1024)
+    s.load()
+    s.start()
+    for i in range(200):
+        s.put(f"k{i}".encode(), b"x" * 1024).result(timeout=5)
+    wal_size = os.path.getsize(db_path + "-wal")
+    s.close()
+    assert ("kv-writer", "PRAGMA wal_checkpoint(TRUNCATE)") in log
+    assert wal_size < 200 * 1024
+    s2 = Storage(db_path)
+    s2.load()
+    assert len(s2.data) == 200
+
+
+# Checks: a failing writer checkpoint is treated like a failed commit: fail-stop
+#   (design.md §1 Failure policy). Writes acked before it stay acked.
+# Setup: a storage with a tiny WAL limit whose TRUNCATE checkpoint raises an I/O error.
+# Action: commit one put.
+# Expected: the put is acked (its commit succeeded), and on_fatal is called once with the error.
+def test_writer_checkpoint_failure_is_fatal(db_path):
+    fatal = []
+    s = Storage(db_path, connect=lambda p: RecordingConnection(connect(p), [], fail_on="TRUNCATE"),
+                checkpoint_interval=60, wal_limit_bytes=1, on_fatal=fatal.append)
+    s.load()
+    s.start()
+    s.put(b"k", b"v").result(timeout=5)
+    deadline = time.time() + 5
+    while not fatal and time.time() < deadline:
+        time.sleep(0.01)
+    assert len(fatal) == 1 and isinstance(fatal[0], sqlite3.OperationalError)
     s.close()
