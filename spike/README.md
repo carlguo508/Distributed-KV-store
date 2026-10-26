@@ -19,6 +19,7 @@ Python 3.14, no third-party packages.
 | `http_server.py` | Second prototype: aiohttp + SQLite, batched transactions on a writer thread, apply-after-commit |
 | `http_client.py` | Open-loop HTTP workload generator, routes keys by md5 to the owning server |
 | `run_http.sh` | Same as `run.sh` for the HTTP + SQLite prototype (needs the venv below) |
+| `checkpoint/` | Part 3: checkpoint diagnosis against the real `kvstore` server; see its own README |
 
 The server and client are not v1 code. They exist only to measure.
 
@@ -157,7 +158,47 @@ Both pass the 50 ms read and 100 ms write targets.
 5. **Not covered here:** restart replay is only the trivial `SELECT k, v FROM kv` at startup;
    the SIGKILL-mid-load test from requirement A8 still needs to be run. WAL checkpointing
    happens automatically (default every 1000 pages) and with `checkpoint_fullfsync=ON` it also
-   pays a full fsync; its effect on tail latency was not isolated in this run.
+   pays a full fsync; its effect on tail latency was not isolated in this run. Part 3 below
+   isolates it.
+
+## Part 3: WAL checkpoints and write tail latency
+
+Full method, per-run tables and scripts: [checkpoint/README.md](checkpoint/README.md).
+
+Question: after `kvstore.bench` gained a prefill, one N=3 run of the real `kvstore` server
+reported put p99 253 ms against the 100 ms target while Gets stayed under 1 ms. Is SQLite's
+WAL checkpoint the cause?
+
+Setup: N=3 on one MacBook Pro M2 Pro, 1,000 ops/s, 100K keys, 1 KiB values, prefill on. A
+diagnostic wrapper (`checkpoint/diag_server.py`) logs every COMMIT, whether it checkpointed,
+and the WAL size, and `checkpoint/analyze.py` lines them up with the benchmark's per-second
+latencies.
+
+| Case | Runs | Put p99 | Seconds with write p99 > 100 ms | Max WAL per server |
+|------|------|---------|---------------------------------|--------------------|
+| Default auto-checkpoint, 60 s (T1) | 2 | 37.8, 44.3 ms | 0/60, 0/60 | 4.2 MB |
+| Default auto-checkpoint, 20 s (BASE) | 1 | **108.0 ms** | 5/20 | 4.3 MB |
+| Checkpoints off (T4, diagnostic only) | 1 | 29.8 ms | 0/60 | 63 MB and growing |
+| Background PASSIVE only (BG) | 1 | 32.3 ms | 0/20 | **243 MB** and growing |
+| Shipped fix, 20 s (FIX) | 3 | 30.8-32.6 ms | 0/20 each | 68 MB |
+| Shipped fix, 60 s, latest (`results/n3.csv`, 2026-10-26) | 1 | 30.9 ms | 0/60 | not logged |
+
+### Findings
+
+1. **SQLite's auto-checkpoint stalls the writer.** It runs inside the COMMIT that crosses
+   1,000 WAL pages, every few seconds at this load, and every write queued behind that COMMIT
+   waits for it. Seconds with a checkpoint had higher write p99 in every baseline run. The
+   failure is intermittent: BASE-r1 went over target, the T1 runs did not.
+2. **The prefill leaves nothing behind.** Starting the timed run with an empty WAL (T3) changed
+   nothing.
+3. **Moving checkpoints off the writer fixes the tail but not the WAL.** A background PASSIVE
+   checkpoint never blocks the writer, but it never resets the WAL either under steady writes,
+   so the WAL grows without bound.
+4. **The shipped fix bounds the WAL.** `kvstore/storage.py` now disables auto-checkpoint on the
+   writer, runs PASSIVE every 1 s on a background connection, and has the writer TRUNCATE
+   between batches once the WAL passes 64 MB. All three 20 s runs passed with write p99 under
+   44 ms in every second, and the WAL peaked at about 67 MB. The latest 60 s run on the current
+   code also passes: put p99 30.9 ms, worst second 36 ms, 0 errors.
 
 ## Carry into the design
 
@@ -165,6 +206,9 @@ Both pass the 50 ms read and 100 ms write targets.
   empty body for an empty value; 421 `WRONG_OWNER` for a misrouted key.
 - SQLite, WAL, `synchronous=FULL`, `fullfsync=ON`, `checkpoint_fullfsync=ON`; one writer
   thread, one transaction per batch, apply to the in-memory dict only after `COMMIT`.
+- Added after part 3: `wal_autocheckpoint=0` on the writer, a background PASSIVE checkpoint
+  every 1 s on a second connection, and a writer TRUNCATE between batches once the WAL passes
+  64 MB.
 - Ack only after the transaction containing the write has committed; a failed commit applies
   nothing and returns an error.
 - Single asyncio process per server, client-side md5 hash partitioning across servers.
