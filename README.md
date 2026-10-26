@@ -10,13 +10,27 @@ Docs: [requirements](docs/requirement.md) · [design](docs/design.md) ·
 ## Quickstart
 
     python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+    .venv/bin/pytest -q              # full test suite, including integration tests; all should pass
     scripts/start.sh                 # 3 servers from cluster.json on 127.0.0.1:7300-7302
-    curl -X PUT --data-binary 'running' http://127.0.0.1:7300/keys/am9iLTE   # key "job-1"
-    curl http://127.0.0.1:7300/keys/am9iLTE
+
+The key in the URL is base64url: key `job-1` is `am9iLTE`. Each key is owned by exactly one
+server, `md5(key) % N`. Under the 3-server `cluster.json`, `job-1` belongs to **server 2 at
+127.0.0.1:7302**. Any other server refuses it with `421 WRONG_OWNER <owner id>`:
+
+    curl -s -w ' %{http_code}\n' http://127.0.0.1:7300/keys/am9iLTE
+    # WRONG_OWNER 2 421          <- server 0 is not the owner, and names the owner
+
+    curl -s -w ' %{http_code}\n' -X PUT --data-binary 'running' http://127.0.0.1:7302/keys/am9iLTE
+    #  200                       <- owner accepts; acked after the commit is fsynced
+    curl -s -w ' %{http_code}\n' http://127.0.0.1:7302/keys/am9iLTE
+    # running 200
+
     scripts/stop.sh
 
-The key in the URL is base64url. A server answers `421 WRONG_OWNER <id>` if the key hashes
-to another server; the client library (`kvstore.client.KVClient`) routes automatically.
+The client library (`kvstore.client.KVClient`) computes the owner itself, so it gets a 421
+only if its cluster file differs from the servers'. To find the encoding and owner of your own key:
+
+    .venv/bin/python -c "from kvstore.config import owner_of, load_config; from kvstore.keycodec import encode_key; k=b'my-key'; print(encode_key(k), owner_of(k, load_config('cluster.json').n))"
 
 `scripts/start.sh` waits up to `START_TIMEOUT` seconds (default 20) for each server's port and
 exits non-zero, naming the server's log file, if one does not come up. `scripts/stop.sh` never
@@ -37,11 +51,46 @@ deletes `kv.db`, `kv.db-wal` or `kv.db-shm`.
 
 ## Workload generator
 
-    .venv/bin/python -m kvstore.bench --config cluster.json --rate 1000 --seconds 60 --out results/n3.csv
+`kvbench` runs an open loop at a fixed arrival rate with 80% Get / 15% Put / 5% Delete over
+uniformly chosen keys. Latency is measured client-side and includes queueing. It prints a
+p50/p95/p99/p99.9/max table per operation. Exit code 0 means read p99 < 50 ms, write p99 <
+100 ms and no errors; otherwise 1. The servers in the config must already be running.
 
-Open loop at a fixed arrival rate, 80% Get / 15% Put / 5% Delete, uniform keys over 100K,
-1 KiB values, 32 keep-alive connections per server. Latency is measured client-side and
-includes queueing. Exit code 0 means read p99 < 50 ms and write p99 < 100 ms.
+| Flag | Meaning | Default |
+|------|---------|---------|
+| `--config` | Cluster file listing the servers to load; sets N and routing | `cluster.json` |
+| `--rate` | Target requests per second, issued on a fixed schedule (open loop) | `1000` |
+| `--seconds` | How long to issue requests | `60` |
+| `--keys` | Size of the key space; keys are picked uniformly from it | `100000` |
+| `--value-size` | Bytes per Put value | `1024` |
+| `--conns` | Keep-alive connections (and concurrent workers) per server | `32` |
+| `--seed` | Random seed for the op mix and key choice; omit for a different run each time | none |
+| `--out` | Write the per-operation results as CSV to this path; omit to print only | none |
+
+Examples:
+
+    # Short smoke run against one server, no CSV
+    scripts/start.sh cluster-1.json
+    .venv/bin/python -m kvstore.bench --config cluster-1.json --rate 200 --seconds 5
+    scripts/stop.sh cluster-1.json
+
+    # Same load on N=1 and N=3, each saved to its own CSV
+    rm -rf data && scripts/start.sh cluster-1.json
+    .venv/bin/python -m kvstore.bench --config cluster-1.json --seconds 60 --seed 1 --out results/exp-n1.csv
+    scripts/stop.sh cluster-1.json
+    rm -rf data && scripts/start.sh cluster.json
+    .venv/bin/python -m kvstore.bench --config cluster.json --seconds 60 --seed 1 --out results/exp-n3.csv
+    scripts/stop.sh cluster.json
+
+    # Heavier experiment: 2x the target rate with 4 KiB values
+    scripts/start.sh
+    .venv/bin/python -m kvstore.bench --rate 2000 --value-size 4096 --seconds 30 --out results/exp-2k-4k.csv
+    scripts/stop.sh
+
+`rm -rf data` deletes every stored key; it gives each run a fresh, equal starting point.
+
+**Write experiments to new CSV files.** `results/n1.csv` and `results/n3.csv` are the committed
+measurements behind the Results table below; overwriting them changes the record.
 
 ## Results
 
