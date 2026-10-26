@@ -76,6 +76,12 @@ class Report:
     # Keys written before the timed run (0 when prefill is off), and how long that took.
     prefill_keys: int = 0
     prefill_seconds: float = 0.0
+    # One entry per timed request: (seconds after the run started, by SCHEDULED time; op;
+    # latency in ms, or None if the request failed). Feeds the per-second table.
+    timeline: list[tuple[float, str, float | None]] = field(default_factory=list)
+    # Wall-clock time the timed run started, so per-second rows can be lined up with
+    # timestamps from other sources such as server logs.
+    started_at: float = 0.0
     rows: list[dict] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -109,6 +115,44 @@ class Report:
                 "hits", "not_found"]
         fmt = lambda v: "" if v is None else (f"{v:.2f}" if isinstance(v, float) else str(v))
         return "\n".join([",".join(cols)] + [",".join(fmt(r[c]) for c in cols) for r in self.rows]) + "\n"
+
+    def per_second(self) -> list[dict]:
+        """Latency per second of the timed run, so short stalls (for example a checkpoint inside
+        a COMMIT) show up as slow seconds instead of disappearing into whole-run percentiles."""
+        buckets: dict[int, list[tuple[str, float | None]]] = {}
+        for t, op, ms in self.timeline:
+            buckets.setdefault(int(t), []).append((op, ms))
+        rows = []
+        for sec in sorted(buckets):
+            items = buckets[sec]
+            writes = sorted(ms for op, ms in items if op != "get" and ms is not None)
+            gets = sorted(ms for op, ms in items if op == "get" and ms is not None)
+            rows.append({
+                "t": sec, "epoch": self.started_at + sec, "writes": len(writes),
+                "w_p50": percentile(writes, 50), "w_p99": percentile(writes, 99),
+                "w_max": writes[-1] if writes else None,
+                "errors": sum(1 for _, ms in items if ms is None),
+                # Get p99 alongside: if reads are slow too, the whole machine stalled, not
+                # just the write path (reads never touch SQLite).
+                "g_p99": percentile(gets, 99),
+            })
+        return rows
+
+    def per_second_text(self) -> str:
+        f = lambda v: "-" if v is None else f"{v:7.1f}"
+        lines = [f"{'t':>4s}{'writes':>8s}{'w_p50':>8s}{'w_p99':>8s}{'w_max':>8s}{'errs':>6s}{'g_p99':>8s}"]
+        for r in self.per_second():
+            lines.append(f"{r['t']:4d}{r['writes']:8d} {f(r['w_p50'])} {f(r['w_p99'])} {f(r['w_max'])}"
+                         f"{r['errors']:6d} {f(r['g_p99'])}")
+        return "\n".join(lines)
+
+    def per_second_csv(self) -> str:
+        fmt = lambda v: "" if v is None else f"{v:.2f}"
+        lines = ["t,epoch,writes,w_p50_ms,w_p99_ms,w_max_ms,errors,g_p99_ms"]
+        for r in self.per_second():
+            lines.append(f"{r['t']},{r['epoch']:.3f},{r['writes']},{fmt(r['w_p50'])},{fmt(r['w_p99'])},"
+                         f"{fmt(r['w_max'])},{r['errors']},{fmt(r['g_p99'])}")
+        return "\n".join(lines) + "\n"
 
     def to_text(self) -> str:
         total = sum(r["count"] for r in self.rows)
@@ -147,6 +191,8 @@ async def run(cfg: ClusterConfig, rate: int, seconds: float, n_keys: int = 100_0
     errors = 0
     error_counts: dict[str, int] = {}
     get_hits = get_not_found = 0
+    timeline: list[tuple[float, str, float | None]] = []
+    start = 0.0                                   # set when the timed run begins
     q: asyncio.Queue = asyncio.Queue()
 
     def count_error(exc: BaseException) -> None:
@@ -185,9 +231,12 @@ async def run(cfg: ClusterConfig, rate: int, seconds: float, n_keys: int = 100_0
                 # Latency is measured from the request's SCHEDULED time, not from when it was
                 # enqueued or picked up. If the generator or the system falls behind, that
                 # delay counts, which avoids "coordinated omission" hiding slow periods.
-                latencies[op].append((time.perf_counter() - scheduled_at) * 1000.0)
+                ms = (time.perf_counter() - scheduled_at) * 1000.0
+                latencies[op].append(ms)
+                timeline.append((scheduled_at - start, op, ms))
             except Exception as exc:  # noqa: BLE001 - counted, run continues
                 count_error(exc)
+                timeline.append((scheduled_at - start, op, None))
 
     async with KVClient(cfg, conns_per_server=conns_per_server) as kv:
         # Prefill: write every key once before the clock starts. Without it the store starts
@@ -202,6 +251,7 @@ async def run(cfg: ClusterConfig, rate: int, seconds: float, n_keys: int = 100_0
         # One worker per pooled connection, so each worker holds at most one in-flight request.
         workers = [asyncio.create_task(worker(kv)) for _ in range(conns_per_server * cfg.n)]
         interval = 1.0 / rate
+        started_at = time.time()
         start = time.perf_counter()
         next_at, end = start, start + seconds
         # Open loop (requirement A5): requests are issued on a fixed schedule whether or not
@@ -223,7 +273,8 @@ async def run(cfg: ClusterConfig, rate: int, seconds: float, n_keys: int = 100_0
         elapsed = time.perf_counter() - start
     return Report(latencies=latencies, seconds=elapsed, errors=errors, error_counts=error_counts,
                   get_hits=get_hits, get_not_found=get_not_found,
-                  prefill_keys=n_keys if prefill else 0, prefill_seconds=prefill_seconds if prefill else 0.0)
+                  prefill_keys=n_keys if prefill else 0, prefill_seconds=prefill_seconds if prefill else 0.0,
+                  timeline=timeline, started_at=started_at)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -238,6 +289,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", default=None, help="CSV path")
     p.add_argument("--no-prefill", action="store_true",
                    help="skip writing every key before the timed run")
+    p.add_argument("--per-second", action="store_true",
+                   help="print write latency per second; with --out also save <out>.per-second.csv")
     a = p.parse_args(argv)
     cfg = load_config(a.config)
     print(f"kvbench: {cfg.n} server(s), {a.rate} ops/s for {a.seconds:.0f}s, 80/15/5, "
@@ -245,12 +298,19 @@ def main(argv: list[str] | None = None) -> int:
           f"prefill {'off' if a.no_prefill else 'on'}", file=sys.stderr, flush=True)
     rep = asyncio.run(run(cfg, a.rate, a.seconds, a.keys, a.value_size, a.conns, a.seed,
                           prefill=not a.no_prefill))
+    if a.per_second:
+        print(rep.per_second_text())
     print(rep.to_text())
     if a.out:
         os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
         with open(a.out, "w") as f:
             f.write(rep.to_csv())
         print(f"csv written to {a.out}")
+        if a.per_second:
+            ps_path = os.path.splitext(a.out)[0] + ".per-second.csv"
+            with open(ps_path, "w") as f:
+                f.write(rep.per_second_csv())
+            print(f"per-second csv written to {ps_path}")
     # Exit code reflects pass/fail so scripts and CI can gate on it.
     return 0 if rep.passed() else 1
 

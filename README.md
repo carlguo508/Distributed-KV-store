@@ -71,6 +71,7 @@ prefill errors; otherwise 1. The servers in the config must already be running.
 | `--seed` | Random seed for the op mix and key choice; omit for a different run each time | none |
 | `--out` | Write the per-operation results as CSV to this path; omit to print only | none |
 | `--no-prefill` | Skip the prefill, e.g. when the same key space is already loaded | prefill on |
+| `--per-second` | Print write p50/p99/max, errors and Get p99 for each second of the timed run; with `--out`, also save `<out>.per-second.csv` | off |
 
 Examples:
 

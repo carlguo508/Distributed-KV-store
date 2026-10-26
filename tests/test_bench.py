@@ -263,3 +263,72 @@ async def test_get_hit_ratio_above_90_percent_after_prefill(storage):
     assert rep.errors == 0
     assert rep.get_hits + rep.get_not_found == len(rep.latencies["get"])
     assert rep.get_hits / len(rep.latencies["get"]) > 0.90
+
+
+# Checks: the per-second table buckets timed requests by their scheduled second, so a slow
+#   period (e.g. a checkpoint stall) is visible instead of being averaged into the run.
+# Setup: a report with a hand-built timeline: second 0 has 2 puts, 1 delete, 2 gets and a failed
+#   put; second 1 has 1 put; the run started at wall time 1000.0.
+# Action: compute per-second rows.
+# Expected: 2 rows. Second 0: writes=3 (puts + delete, successes only), w_p50=20, w_p99=30,
+#   w_max=30, errors=1, g_p99=2, epoch=1000. Second 1: writes=1, no gets (g_p99 None), epoch=1001.
+def test_per_second_rows_bucket_by_scheduled_second():
+    timeline = [(0.1, "put", 10.0), (0.5, "put", 30.0), (0.9, "delete", 20.0),
+                (0.2, "get", 1.0), (0.3, "get", 2.0), (0.4, "put", None), (1.2, "put", 5.0)]
+    rep = Report(latencies={"get": [1.0, 2.0], "put": [10.0, 30.0, 5.0], "delete": [20.0]},
+                 seconds=2, errors=1, timeline=timeline, started_at=1000.0)
+    rows = rep.per_second()
+    assert [r["t"] for r in rows] == [0, 1]
+    r0, r1 = rows
+    assert (r0["writes"], r0["w_p50"], r0["w_p99"], r0["w_max"], r0["errors"], r0["g_p99"]) == (3, 20.0, 30.0, 30.0, 1, 2.0)
+    assert r0["epoch"] == 1000.0
+    assert (r1["writes"], r1["w_p99"], r1["g_p99"], r1["epoch"]) == (1, 5.0, None, 1001.0)
+
+
+# Checks: the per-second table renders as text and CSV with a fixed header.
+# Setup: the same kind of report with one second of data.
+# Action: render text and CSV.
+# Expected: text header names the columns and has one data row; CSV header is
+#   "t,epoch,writes,w_p50_ms,w_p99_ms,w_max_ms,errors,g_p99_ms" and one row starting "0,1000.000,1,".
+def test_per_second_text_and_csv():
+    rep = Report(latencies={"get": [], "put": [4.0], "delete": []}, seconds=1, errors=0,
+                 timeline=[(0.5, "put", 4.0)], started_at=1000.0)
+    text = rep.per_second_text().splitlines()
+    assert text[0].split() == ["t", "writes", "w_p50", "w_p99", "w_max", "errs", "g_p99"]
+    assert len(text) == 2
+    csv_lines = rep.per_second_csv().strip().splitlines()
+    assert csv_lines[0] == "t,epoch,writes,w_p50_ms,w_p99_ms,w_max_ms,errors,g_p99_ms"
+    assert csv_lines[1].startswith("0,1000.000,1,")
+
+
+# Checks: run() records one timeline entry per timed request, stamped relative to the run start,
+#   and records the wall-clock start (needed to line seconds up with server logs).
+# Setup: a recording fake client; prefill off; 100 ops/s for 0.5 s.
+# Action: run the generator.
+# Expected: timeline length equals the number of measured requests, every t is in [0, 0.5), and
+#   started_at is a wall-clock time close to now.
+async def test_run_records_timeline(monkeypatch):
+    monkeypatch.setattr(bench, "KVClient", RecordingClient)
+    cfg = ClusterConfig(servers=(ServerConfig(0, "h", 1, "d"),))
+    before = time.time()
+    rep = await run(cfg, rate=100, seconds=0.5, n_keys=10, value_size=8, conns_per_server=4, seed=1,
+                    prefill=False)
+    assert len(rep.timeline) == sum(len(v) for v in rep.latencies.values())
+    assert all(0.0 <= t < 0.5 for t, _, _ in rep.timeline)
+    assert before - 1 <= rep.started_at <= time.time()
+
+
+# Checks: the CLI --per-second flag prints the table and, with --out, saves it as a second CSV.
+# Setup: a recording fake client; a one-server cluster file; 50 ops/s for 0.2 s, prefill off.
+# Action: call main() with --per-second --out <tmp>/run.csv.
+# Expected: stdout contains the per-second header; <tmp>/run.per-second.csv exists with its header.
+def test_cli_per_second_prints_and_saves(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(bench, "KVClient", RecordingClient)
+    cfg = tmp_path / "c.json"
+    cfg.write_text('{"servers": [{"id": 0, "host": "h", "port": 1, "data_dir": "d"}]}')
+    out = tmp_path / "run.csv"
+    bench.main(["--config", str(cfg), "--rate", "50", "--seconds", "0.2", "--keys", "5",
+                "--no-prefill", "--per-second", "--out", str(out)])
+    assert "w_p99" in capsys.readouterr().out
+    ps = tmp_path / "run.per-second.csv"
+    assert ps.read_text().startswith("t,epoch,writes,")
