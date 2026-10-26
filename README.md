@@ -32,9 +32,18 @@ only if its cluster file differs from the servers'. To find the encoding and own
 
     .venv/bin/python -c "from kvstore.config import owner_of, load_config; from kvstore.keycodec import encode_key; k=b'my-key'; print(encode_key(k), owner_of(k, load_config('cluster.json').n))"
 
-`scripts/start.sh` waits up to `START_TIMEOUT` seconds (default 20) for each server's port and
-exits non-zero, naming the server's log file, if one does not come up. `scripts/stop.sh` never
-deletes `kv.db`, `kv.db-wal` or `kv.db-shm`.
+`scripts/start.sh` only reports a server as up when that server is the process the script just
+launched. For each server it:
+
+- refuses a port that is already in use, and prints the pid and command line holding it plus
+  how to fix it (`scripts/stop.sh <its config>`, or `kill <pid>` if its pid file is gone);
+- waits up to `START_TIMEOUT` seconds (default 20) until `GET /info` on the port returns the
+  expected pid, server id and N. It fails at once, showing the tail of the server's log, if the
+  server exits during startup, and fails if a different process answers.
+
+`cluster.json` (N=3, ports 7300-7302) and `cluster-1.json` (N=1, port 7400) share no port or
+data directory, so a server left over from one cannot answer for the other.
+`scripts/stop.sh` never deletes `kv.db`, `kv.db-wal` or `kv.db-shm`.
 
 ## API
 
@@ -43,6 +52,7 @@ deletes `kv.db`, `kv.db-wal` or `kv.db-shm`.
 | Put | `PUT /keys/{b64url}` body = value | 200 | 400, 413, 421, 500 |
 | Get | `GET /keys/{b64url}` | 200 + body (empty allowed) | 404 `NotFound`, 400, 421 |
 | Delete | `DELETE /keys/{b64url}` | 200 (also if absent) | 400, 421, 500 |
+| Info | `GET /info` | 200 + JSON `{"pid", "id", "n"}` | – |
 
 ## Tests
 
@@ -94,6 +104,8 @@ Examples:
     scripts/stop.sh
 
 `rm -rf data` deletes every stored key; it gives each run a fresh, equal starting point.
+Before a measured run, `pgrep -fl kvstore.server` should print nothing: an idle leftover
+server is harmless to correctness but shares the CPU and disk with the run.
 
 **Write experiments to new CSV files.** `results/n1.csv` and `results/n3.csv` are the committed
 measurements behind the Results table below; overwriting them changes the record.
@@ -101,16 +113,23 @@ measurements behind the Results table below; overwriting them changes the record
 ## Results
 
 Machine: MacBook Pro (Mac14,9), Apple M2 Pro, 16 GB RAM, macOS 26.5.1, Python 3.14.6.
-Date: 2026-10-25. 60 s at 1,000 ops/s, fresh data directory for each run. Generator and
-servers on the same machine. Latency is measured from each request's scheduled time. All
-latencies in ms.
+Date: 2026-10-26. 60 s at 1,000 ops/s, `--seed 1`, fresh data directory for each run, 100K
+keys prefilled (about 30 s, not measured), so 98.6% of Gets found a value. Generator and
+servers on the same machine, with no other kvserver running. Latency is measured from each
+request's scheduled time. All latencies in ms.
 
-| Servers | Get p99 | Put p99 | Delete p99 | Get p99.9 | Put p99.9 | Errors | Result |
-|---------|---------|---------|------------|-----------|-----------|--------|--------|
-| 1 | 1.63 | 24.14 | 20.63 | 19.01 | 57.94 | 0 | PASS |
-| 3 | 1.22 | 21.68 | 17.71 | 4.58 | 47.68 | 0 | PASS |
+| Servers | Get p99 | Put p99 | Delete p99 | Get p99.9 | Put p99.9 | Put max | Errors | Result |
+|---------|---------|---------|------------|-----------|-----------|---------|--------|--------|
+| 1 | 0.95 | 14.48 | 14.04 | 2.68 | 29.86 | 67.40 | 0 | PASS |
+| 3 | 0.73 | 30.90 | 31.73 | 1.53 | 35.95 | 41.15 | 0 | PASS |
 
-Raw CSVs: [results/n1.csv](results/n1.csv), [results/n3.csv](results/n3.csv).
+Writes are slower on 3 servers than on 1 (Put p50 11.8 vs 7.5 ms): the three processes share
+one disk, and each commit's full fsync waits for the drive cache flush, so they likely queue
+behind each other. Reads never touch SQLite and are not affected.
+
+Raw CSVs: [results/n1.csv](results/n1.csv), [results/n3.csv](results/n3.csv); write latency per
+second of each run: [results/n1.per-second.csv](results/n1.per-second.csv),
+[results/n3.per-second.csv](results/n3.per-second.csv).
 
 Restart test: `tests/test_restart.py` SIGKILLs a server under load, restarts it and verifies
 every acknowledged write. Result: PASS, 2026-10-25. A manual demo on the 3-server cluster
@@ -129,5 +148,6 @@ startup check that `synchronous=FULL` and `fullfsync=ON` are in effect.
     kvstore/server.py    aiohttp handlers and startup order
     kvstore/client.py    async client with routing
     kvstore/bench.py     kvbench workload generator
+    kvstore/probe.py     start.sh readiness probe: GET /info must match the launched pid, id and N
     scripts/             start.sh / stop.sh
     spike/               feasibility measurements that drove the design
