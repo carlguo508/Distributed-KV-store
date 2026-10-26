@@ -210,3 +210,64 @@ def test_commit_failure_fails_batch_applies_nothing_and_calls_on_fatal(db_path):
     assert s.data == {}
     assert len(fatal) == 1 and isinstance(fatal[0], sqlite3.OperationalError)
     s.close()
+
+
+# Checks: a cancelled write future does not kill the writer thread (success path). A future is
+#   cancelled when aiohttp cancels the handler awaiting it (server shutdown, or client
+#   disconnect with handler_cancellation on); resolving it would raise InvalidStateError.
+# Setup: a storage with one put queued and its future cancelled before the writer starts.
+# Action: start the writer, then submit a second put and wait for it.
+# Expected: the second put resolves and is visible, and on_fatal is never called.
+def test_cancelled_future_does_not_kill_writer(db_path):
+    fatal = []
+    s = Storage(db_path, on_fatal=fatal.append)
+    s.load()
+    cancelled = s.put(b"a", b"1")
+    assert cancelled.cancel()
+    s.start()
+    s.put(b"b", b"2").result(timeout=5)
+    assert s.data[b"b"] == b"2"
+    assert fatal == []
+    s.close()
+
+
+# Checks: a cancelled future in a failing batch does not stop fail-stop (failure path,
+#   design.md §1 Failure policy).
+# Setup: a storage whose COMMIT always raises; two puts queued before the writer starts, the
+#   first one's future cancelled.
+# Action: start the writer and wait for the second future.
+# Expected: the second future raises the commit error and on_fatal is called once with it.
+def test_cancelled_future_in_failed_batch_still_fails_stop(db_path):
+    fatal = []
+    s = Storage(db_path, connect=lambda p: FailingCommit(connect(p)), on_fatal=fatal.append)
+    s.load()
+    cancelled, live = s.put(b"a", b"1"), s.put(b"b", b"2")
+    assert cancelled.cancel()
+    s.start()
+    with pytest.raises(sqlite3.OperationalError):
+        live.result(timeout=5)
+    assert len(fatal) == 1 and isinstance(fatal[0], sqlite3.OperationalError)
+    s.close()
+
+
+class ExplodingDict(dict):
+    def __setitem__(self, key, value):
+        raise RuntimeError("unexpected bug in apply")
+
+
+# Checks: any unexpected exception in the writer thread reaches on_fatal, so the server exits
+#   instead of serving reads with a dead writer (design.md §1 Failure policy).
+# Setup: a started storage whose dict raises on assignment, simulating a bug after COMMIT.
+# Action: submit a put and wait for its future.
+# Expected: the future raises the error, and on_fatal is called once with it.
+def test_unexpected_writer_error_calls_on_fatal(db_path):
+    fatal = []
+    s = Storage(db_path, on_fatal=fatal.append)
+    s.load()
+    s.data = ExplodingDict()
+    s.start()
+    fut = s.put(b"k", b"v")
+    with pytest.raises(RuntimeError, match="unexpected bug"):
+        fut.result(timeout=5)
+    assert len(fatal) == 1 and isinstance(fatal[0], RuntimeError)
+    s.close()

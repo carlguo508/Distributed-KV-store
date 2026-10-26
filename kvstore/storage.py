@@ -137,7 +137,23 @@ class Storage:
 
     # ---- writer thread ---------------------------------------------------
     def _run(self) -> None:
+        # Safety net: any unexpected exception (a bug, not a COMMIT failure, which _commit
+        # handles) must not end the writer silently while handlers keep serving reads and
+        # queueing writes that would never be acked. Fail the in-flight batch and treat it
+        # like a commit failure (design.md §1 Failure policy).
+        batch: list[_Record] = []
+        try:
+            self._loop(batch)
+        except BaseException as exc:  # noqa: BLE001 - any writer crash is fatal
+            for rec in batch:
+                if not rec.future.done():
+                    rec.future.set_exception(exc)
+            self._on_fatal(exc)
+
+    def _loop(self, batch: list[_Record]) -> None:
+        # `batch` is owned by _run so it can fail the in-flight records if this raises.
         while True:
+            batch.clear()
             # Block for the first record, then take whatever else is already queued
             # without waiting. Under light load a batch is one write (no added latency);
             # under heavy load writes that queued during the previous fsync share the
@@ -145,7 +161,7 @@ class Storage:
             first = self._queue.get()
             if first is None:
                 return
-            batch = [first]
+            batch.append(self._take(first))
             stop = False
             while len(batch) < self.max_batch:
                 try:
@@ -155,11 +171,23 @@ class Storage:
                 if item is None:
                     stop = True
                     break
-                batch.append(item)
+                batch.append(self._take(item))
             # After a failed commit the writer stops for good, so no later batch can
             # commit on top of uncertain disk state (design.md §4 last row).
             if not self._commit(batch) or stop:
                 return
+
+    @staticmethod
+    def _take(rec: _Record) -> _Record:
+        # A future is cancelled when aiohttp cancels the handler awaiting it: on server
+        # shutdown (e.g. SIGTERM), or on client disconnect if handler_cancellation is
+        # enabled. asyncio.wrap_future propagates that cancel here. Marking it RUNNING here
+        # means a later cancel() fails, so once the writer owns a record its future is
+        # either already cancelled or can no longer become cancelled, and resolving it
+        # cannot raise InvalidStateError. A cancelled record's write is still committed:
+        # it was never acked, so applying it or not are both allowed (design.md §7 table).
+        rec.future.set_running_or_notify_cancel()
+        return rec
 
     def _commit(self, batch: list[_Record]) -> bool:
         conn = self._conn
@@ -179,7 +207,8 @@ class Storage:
             # design.md §3 Put "COMMIT fails": every request in the batch gets an error
             # (500), and the dict is left untouched because apply only runs on success.
             for rec in batch:
-                rec.future.set_exception(exc)
+                if not rec.future.cancelled():     # nobody is waiting for a cancelled one
+                    rec.future.set_exception(exc)
             self._on_fatal(exc)
             return False
         # design.md §1 Visibility (apply-after-commit): only now, with the WAL fsynced,
@@ -193,5 +222,6 @@ class Storage:
         # Acks go out after the dict is updated, so a Get sent after the ack sees the
         # write (design.md §4 row 1).
         for rec in batch:
-            rec.future.set_result(None)
+            if not rec.future.cancelled():
+                rec.future.set_result(None)
         return True
