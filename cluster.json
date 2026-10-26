@@ -1,0 +1,8 @@
+{
+  "servers": [
+    {"id": 0, "host": "127.0.0.1", "port": 7300, "data_dir": "data/s0"},
+    {"id": 1, "host": "127.0.0.1", "port": 7301, "data_dir": "data/s1"},
+    {"id": 2, "host": "127.0.0.1", "port": 7302, "data_dir": "data/s2"}
+  ],
+  "max_batch": 256
+}
