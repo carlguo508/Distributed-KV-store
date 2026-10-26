@@ -1,0 +1,10 @@
+[BASE-r1] whole run: put p99=108.01 delete p99=134.99 get p99=1.02 ms; errors=0
+  per-second write p99: median=39.9 worst=264.0 ms; seconds over 100 ms: 5/20
+  seconds WITH a checkpoint: 11, median of their write p99=61.8 ms | WITHOUT: 9, median=31.8 ms
+  worst seconds: t=4 p99=264 ckpts=1 slowest commit=39; t=5 p99=151 ckpts=1 slowest commit=237; t=0 p99=125 ckpts=2 slowest commit=117; t=6 p99=109 ckpts=1 slowest commit=87; t=1 p99=102 ckpts=1 slowest commit=78
+  s0: max WAL whole run (incl. prefill)=4.2 MB, timed run=4.2 MB
+  s1: max WAL whole run (incl. prefill)=4.2 MB, timed run=4.2 MB
+  s2: max WAL whole run (incl. prefill)=4.3 MB, timed run=4.3 MB
+  s0: commits=1053 plain p50=9.5 p99=20.4 max=64.3 | checkpoints=5 p50=40.3 max=86.9 ms
+  s1: commits=1053 plain p50=9.7 p99=20.3 max=235.3 | checkpoints=5 p50=45.9 max=94.4 ms
+  s2: commits=1088 plain p50=9.4 p99=20.2 max=237.2 | checkpoints=5 p50=37.3 max=116.7 ms

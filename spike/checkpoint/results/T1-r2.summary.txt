@@ -1,0 +1,7 @@
+[T1-r2] whole run: put p99=44.33 delete p99=37.46 get p99=1.43 ms; errors=0
+  per-second write p99: median=37.5 worst=77.3 ms; seconds over 100 ms: 0/60
+  seconds WITH a checkpoint: 43, median of their write p99=40.4 ms | WITHOUT: 17, median=33.3 ms
+  worst seconds: t=39 p99=77 ckpts=0 slowest commit=19; t=8 p99=71 ckpts=1 slowest commit=64; t=51 p99=58 ckpts=1 slowest commit=39; t=18 p99=54 ckpts=1 slowest commit=40; t=49 p99=54 ckpts=1 slowest commit=47
+  s0: commits=3411 plain p50=8.5 p99=18.0 max=64.2 | checkpoints=15 p50=34.8 max=48.4 ms
+  s1: commits=3312 plain p50=8.5 p99=17.8 max=47.3 | checkpoints=15 p50=37.4 max=48.4 ms
+  s2: commits=3356 plain p50=8.4 p99=18.1 max=40.7 | checkpoints=14 p50=33.0 max=58.8 ms

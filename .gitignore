@@ -7,3 +7,4 @@ data/
 *.log
 .pytest_cache/
 results/exp-*.csv
+spike/checkpoint/data/
