@@ -1,0 +1,10 @@
+[FIX-r3] whole run: put p99=30.78 delete p99=32.05 get p99=0.75 ms; errors=0
+  per-second write p99: median=29.4 worst=41.1 ms; seconds over 100 ms: 0/20
+  seconds WITH a checkpoint: 0, median of their write p99=- ms | WITHOUT: 20, median=29.4 ms
+  worst seconds: t=19 p99=41 ckpts=0 slowest commit=32; t=10 p99=38 ckpts=0 slowest commit=32; t=11 p99=36 ckpts=0 slowest commit=20; t=4 p99=35 ckpts=0 slowest commit=21; t=16 p99=32 ckpts=0 slowest commit=17
+  s0: max WAL whole run (incl. prefill)=67.9 MB, timed run=28.8 MB; writer TRUNCATEs=10 max=467.7 ms; background PASSIVE=49 p50=122.4 max=1765.9 ms
+  s1: max WAL whole run (incl. prefill)=68.0 MB, timed run=18.5 MB; writer TRUNCATEs=9 max=350.6 ms; background PASSIVE=50 p50=97.5 max=1787.1 ms
+  s2: max WAL whole run (incl. prefill)=68.2 MB, timed run=33.7 MB; writer TRUNCATEs=12 max=483.7 ms; background PASSIVE=49 p50=123.8 max=1783.7 ms
+  s0: commits=1148 plain p50=7.7 p99=17.1 max=31.7 | checkpoints=0 p50=- max=- ms
+  s1: commits=1204 plain p50=7.8 p99=17.0 max=30.4 | checkpoints=0 p50=- max=- ms
+  s2: commits=1121 plain p50=7.5 p99=17.4 max=31.7 | checkpoints=0 p50=- max=- ms

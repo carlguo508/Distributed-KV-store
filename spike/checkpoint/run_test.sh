@@ -54,6 +54,11 @@ case "$TEST" in
     bench --seconds "$SECONDS_TIMED" --per-second --out "$RES/$NAME.csv" || true
     stop_servers
     ;;
+  FIX|FIX60)   # kvstore.storage with the checkpoint fix (FIX60: same, named for 60 s runs) (background PASSIVE + writer TRUNCATE over 64 MB)
+    start_servers timed
+    bench --seconds "$SECONDS_TIMED" --per-second --out "$RES/$NAME.csv" || true
+    stop_servers
+    ;;
   BG)    # candidate fix: no checkpoint inside COMMIT, PASSIVE checkpoint every 1 s in a thread
     BG_CKPT=1 start_servers timed wal_autocheckpoint=0
     bench --seconds "$SECONDS_TIMED" --per-second --out "$RES/$NAME.csv" || true

@@ -36,10 +36,19 @@ t_end = t0 + int(secs[-1]["t"]) + 1
 commits = []  # (second index, commit_ms, is_checkpoint, server)
 for path in sorted(glob.glob(f"{here}/data/{name}/s*-timed.commits.csv")):
     server = path.rsplit("/", 1)[1].split("-")[0]
-    for r in csv.DictReader(open(path)):
+    rows = list(csv.DictReader(open(path)))
+    # With the storage fix, COMMIT never checkpoints, and the kv.db-changed flag on a commit only
+    # means the background thread wrote kv.db at the same time, so it is ignored.
+    fixed = any(r.get("kind") in ("writer_truncate", "bg_passive") for r in rows)
+    for r in rows:
         t = float(r["t"])
-        if t0 <= t < t_end:
-            commits.append((int(t - t0), float(r["commit_ms"]), r["ckpt"] == "1", server))
+        kind = r.get("kind") or "commit"   # logs before the storage checkpoint fix have no kind
+        if t0 <= t < t_end and kind == "commit":
+            commits.append((int(t - t0), float(r["commit_ms"]), r["ckpt"] == "1" and not fixed, server))
+        elif t0 <= t < t_end and kind == "writer_truncate":
+            # A TRUNCATE checkpoint on the writer blocks the next batch, like a checkpoint
+            # inside COMMIT did before the fix, so it counts as a checkpoint stall.
+            commits.append((int(t - t0), float(r["commit_ms"]), True, server))
 
 ck_count, slowest = defaultdict(int), defaultdict(float)
 for s, ms, ck, _ in commits:
@@ -70,6 +79,15 @@ for path in sorted(glob.glob(f"{here}/data/{name}/s*-timed.commits.csv")):
     wal_all = max(int(r["wal_bytes"]) for r in rows)
     wal_timed = max((int(r["wal_bytes"]) for r in rows if t0 <= float(r["t"]) < t_end), default=0)
     line = f"  {server}: max WAL whole run (incl. prefill)={wal_all / 1e6:.1f} MB, timed run={wal_timed / 1e6:.1f} MB"
+    tr = [float(r["commit_ms"]) for r in rows if r.get("kind") == "writer_truncate"]
+    bp = [float(r["commit_ms"]) for r in rows if r.get("kind") == "bg_passive"]
+    tr_timed = [(int(float(r["t"]) - t0), float(r["commit_ms"])) for r in rows
+                if r.get("kind") == "writer_truncate" and t0 <= float(r["t"]) < t_end]
+    if tr or bp:
+        line += (f"; writer TRUNCATEs={len(tr)} (in timed run: {len(tr_timed)}"
+                 + "".join(f", t={s} {ms:.0f} ms" for s, ms in tr_timed) + ")"
+                 + f" max={f(max(tr) if tr else None)} ms; "
+                 f"background PASSIVE={len(bp)} p50={f(pct(bp, 50))} max={f(max(bp) if bp else None)} ms")
     bgp = path.replace(".commits.csv", ".bgckpt.csv")
     if glob.glob(bgp):
         b = list(csv.DictReader(open(bgp)))

@@ -26,7 +26,7 @@ from kvstore.server import create_app  # noqa: E402
 cfg_path, sid, out = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 extra = sys.argv[4:]
 log = open(out, "w", buffering=1)
-log.write("t,batch,exec_ms,commit_ms,ckpt,wal_bytes\n")
+log.write("t,batch,exec_ms,commit_ms,ckpt,wal_bytes,kind\n")
 
 
 class TimedConnection:
@@ -46,7 +46,17 @@ class TimedConnection:
             commit_ms = (time.perf_counter() - t) * 1000
             ckpt = int(os.stat(self._db).st_mtime_ns != m0)
             wal = os.stat(self._wal).st_size if os.path.exists(self._wal) else 0
-            log.write(f"{time.time():.3f},{self._n},{exec_ms:.3f},{commit_ms:.3f},{ckpt},{wal}\n")
+            log.write(f"{time.time():.3f},{self._n},{exec_ms:.3f},{commit_ms:.3f},{ckpt},{wal},commit\n")
+            return r
+        if sql.startswith("PRAGMA wal_checkpoint"):
+            # Explicit checkpoints from kvstore.storage: the writer's TRUNCATE (on the write
+            # path) or the background thread's PASSIVE (off it). commit_ms holds its duration.
+            t = time.perf_counter()
+            r = self._c.execute(sql, params)
+            ms = (time.perf_counter() - t) * 1000
+            wal = os.stat(self._wal).st_size if os.path.exists(self._wal) else 0
+            kind = "writer_truncate" if "TRUNCATE" in sql else "bg_passive"
+            log.write(f"{time.time():.3f},0,0,{ms:.3f},1,{wal},{kind}\n")
             return r
         self._n += 1
         return self._c.execute(sql, params)
