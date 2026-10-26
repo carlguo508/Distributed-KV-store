@@ -3,7 +3,6 @@ spike/data/
 __pycache__/
 .venv/
 data/
-results/
 *.pid
 *.log
 .pytest_cache/
